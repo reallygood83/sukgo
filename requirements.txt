@@ -3,5 +3,5 @@
 # Investment 도구의 데이터 페처는 아래 패키지를 사용합니다.
 
 yfinance>=0.2.40              # 해외 주식 (가격, 펀더멘털, 뉴스)
-FinanceDataReader>=0.9.90     # 한국 주식 (KRX, 환율, 암호화폐)
+finance-datareader>=0.9.90    # 한국 주식 (KRX, 환율, 암호화폐) — 주의: PyPI 이름은 hyphen, import 시는 FinanceDataReader
 requests>=2.31.0              # HTTP (DART API, Naver Search 등)

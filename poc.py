@@ -1296,18 +1296,19 @@ def tool_flow(config: dict, tool: Tool):
 def ensure_data_fetchers() -> bool:
     """
     Investment 도구용 의존성 자동 체크·설치.
-    yfinance, FinanceDataReader 가 없으면 사용자에게 묻고 자동 설치.
+    yfinance, finance-datareader 가 없으면 사용자에게 묻고 자동 설치.
+    ⚠ FDR: PyPI 이름은 'finance-datareader' (hyphen), import는 'FinanceDataReader' (CamelCase)
     Returns: 설치 완료 여부
     """
-    missing = []
+    missing = []  # PyPI install names
     try:
         import yfinance  # noqa: F401
     except ImportError:
         missing.append("yfinance")
     try:
-        import FinanceDataReader  # noqa: F401
+        import FinanceDataReader  # noqa: F401  (import name은 CamelCase)
     except ImportError:
-        missing.append("FinanceDataReader")
+        missing.append("finance-datareader")  # PyPI install name은 hyphenated
 
     if not missing:
         return True

@@ -146,7 +146,7 @@ def fetch_us_stock(ticker: str) -> dict:
 def fetch_kr_stock(ticker: str) -> dict:
     """FDR로 한국 종목 데이터 수집"""
     if not _FDR_AVAILABLE:
-        return {"error": "FinanceDataReader 미설치 — pip install FinanceDataReader"}
+        return {"error": "FinanceDataReader 미설치 — pip install finance-datareader"}
 
     try:
         data = {"ticker": ticker, "country": "KR"}
