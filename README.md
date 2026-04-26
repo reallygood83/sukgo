@@ -71,6 +71,18 @@ sukgo
 
 → 첫 실행 마법사가 백엔드 + 저장 위치를 1분 만에 설정.
 
+> 🌱 **Python·터미널 처음이신 분?** [`docs/ONBOARDING.md`](docs/ONBOARDING.md) 가이드를 따라하세요. 5분 안에 첫 분석까지.
+
+### ✨ install.sh가 알아서 처리하는 것
+- ✅ Python 자동 탐지 (없으면 설치 안내)
+- ✅ **격리된 sukgo 전용 venv** 생성 (`~/.sukgo/venv`) — 사용자 다른 Python 작업과 충돌 0
+- ✅ pip 자동 업그레이드 + 의존성 설치 (yfinance, finance-datareader, requests)
+- ✅ Wrapper script (`sukgo` 명령어가 자체 venv 자동 사용)
+- ✅ PATH 자동 등록 + 셸 설정 업데이트
+- ✅ 검증 (모든 의존성 import 테스트)
+
+→ 실행 후 어떤 환경에서든 `sukgo` 한 줄로 작동.
+
 ---
 
 ## 📋 요구사항
