@@ -319,8 +319,6 @@ prompts/investment.md   ← 9섹션 분석 (코드와 분리)
                         ← Claude Code 슬래시 커맨드와 동기화 가능
 ```
 
-상세 설계: [`docs/SPEC.md`](docs/SPEC.md)
-
 ---
 
 ## 🔒 보안
@@ -331,8 +329,6 @@ prompts/investment.md   ← 9섹션 분석 (코드와 분리)
 - 코드와 완전 분리 — `.gitignore`로 GitHub 업로드 차단
 - 첫 사용 시 wizard로 안전하게 입력
 - AI CLI(`claude`/`codex`/`gemini`)는 자체 OAuth 사용 — sukgo가 키 보지 않음
-
-상세 가이드: [`docs/SECURITY.md`](docs/SECURITY.md)
 
 ---
 
@@ -387,7 +383,7 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 | v0.5 | 중기 | 도메인 확장 (부동산·관계·건강) + 플러그인 시스템 |
 | v1.0 | 장기 | 영문 i18n + Homebrew tap + 커뮤니티 |
 
-상세: [`docs/SPEC.md`](docs/SPEC.md), [`docs/KICK.md`](docs/KICK.md), [`CHANGELOG.md`](CHANGELOG.md)
+상세: [`CHANGELOG.md`](CHANGELOG.md)
 
 ---
 
@@ -428,9 +424,6 @@ PR / 이슈 환영합니다.
 |------|------|
 | [`README.md`](README.md) | 이 파일 (개요·설치·사용법) |
 | [`docs/ONBOARDING.md`](docs/ONBOARDING.md) | 🌱 초보자 5분 가이드 + FAQ |
-| [`docs/SPEC.md`](docs/SPEC.md) | 개발 스펙 (PRD) |
-| [`docs/KICK.md`](docs/KICK.md) | 서비스 기획·브랜드 포지셔닝 |
-| [`docs/SECURITY.md`](docs/SECURITY.md) | 🔒 보안 가이드 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 변경 기록 |
 
 ---
