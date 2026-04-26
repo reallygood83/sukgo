@@ -60,28 +60,38 @@ ChatGPT 기록처럼 외부 서버에 갇히지 않음.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 한 줄 설치 (One-line install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | bash
+```
+
+→ **1분 안에 모든 것 자동 설치.** 끝나면 새 터미널에서:
+
+```bash
+sukgo
+```
+
+> 🌱 **Python·터미널 처음이신 분?** [`docs/ONBOARDING.md`](docs/ONBOARDING.md) 5분 가이드.
+
+### ✨ get.sh + install.sh 가 알아서 처리하는 것
+- ✅ git·Python 자동 탐지 (없으면 친절한 설치 안내)
+- ✅ `~/.sukgo/source/` 에 코드 다운로드 (재실행 시 자동 업데이트)
+- ✅ `~/.sukgo/venv/` 격리된 Python 환경 생성 (사용자 다른 작업과 충돌 0)
+- ✅ pip 자동 업그레이드 + 의존성 설치 (yfinance, finance-datareader, requests)
+- ✅ Wrapper script (`~/.local/bin/sukgo` — 어디서든 작동)
+- ✅ PATH 자동 등록 (`.zshrc` / `.bashrc`)
+- ✅ 의존성 import 검증
+
+### 또는 개발자용 (직접 클론)
 
 ```bash
 git clone https://github.com/reallygood83/sukgo.git
 cd sukgo
 ./install.sh
-sukgo
 ```
 
-→ 첫 실행 마법사가 백엔드 + 저장 위치를 1분 만에 설정.
-
-> 🌱 **Python·터미널 처음이신 분?** [`docs/ONBOARDING.md`](docs/ONBOARDING.md) 가이드를 따라하세요. 5분 안에 첫 분석까지.
-
-### ✨ install.sh가 알아서 처리하는 것
-- ✅ Python 자동 탐지 (없으면 설치 안내)
-- ✅ **격리된 sukgo 전용 venv** 생성 (`~/.sukgo/venv`) — 사용자 다른 Python 작업과 충돌 0
-- ✅ pip 자동 업그레이드 + 의존성 설치 (yfinance, finance-datareader, requests)
-- ✅ Wrapper script (`sukgo` 명령어가 자체 venv 자동 사용)
-- ✅ PATH 자동 등록 + 셸 설정 업데이트
-- ✅ 검증 (모든 의존성 import 테스트)
-
-→ 실행 후 어떤 환경에서든 `sukgo` 한 줄로 작동.
+→ 코드를 직접 수정·기여하고 싶을 때.
 
 ---
 
