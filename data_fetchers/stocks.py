@@ -35,6 +35,26 @@ def is_korean_ticker(ticker: str) -> bool:
     return bool(re.match(r"^\d{6}$", ticker))
 
 
+def normalize_ticker(user_input: str) -> str:
+    """
+    사용자 입력에서 종목 코드만 추출.
+    예시:
+      '005930(삼성)'     → '005930'
+      '005930 (삼성전자)' → '005930'
+      'NVDA 180'         → 'NVDA'
+      'aapl'             → 'AAPL'
+      '  005930  '       → '005930'
+    """
+    s = user_input.strip()
+    # 공백 기준 첫 토큰
+    first = s.split()[0] if s else ""
+    # 괄호 앞 부분만 ('005930(삼성)' → '005930')
+    if "(" in first:
+        first = first.split("(", 1)[0]
+    # 마지막 정리
+    return first.strip().upper()
+
+
 def _safe(d: dict, key: str, default=None):
     """dict get with fallback for None"""
     v = d.get(key)

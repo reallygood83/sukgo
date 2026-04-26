@@ -1412,9 +1412,13 @@ def investment_flow(config: dict, tool: Tool):
         if confirm != "y":
             return
 
-    print(f"\n  {DIM}종목 입력 예시:{RESET}")
-    print(f"  {DIM}    해외:  NVDA   AAPL   MSFT   TSLA{RESET}")
-    print(f"  {DIM}    한국:  005930(삼성)  035420(네이버)  000660(SK하이닉스){RESET}")
+    print(f"\n  {DIM}종목 입력 (티커 또는 6자리 코드):{RESET}")
+    print(f"  {DIM}    해외 (영문 티커):{RESET}")
+    print(f"  {DIM}        NVDA    AAPL    MSFT    TSLA    GOOGL{RESET}")
+    print(f"  {DIM}    한국 (6자리 종목코드 — 회사명·괄호 X):{RESET}")
+    print(f"  {DIM}        005930   ← 삼성전자{RESET}")
+    print(f"  {DIM}        035420   ← 네이버{RESET}")
+    print(f"  {DIM}        000660   ← SK하이닉스{RESET}")
     print()
     user_input = input(f"  {BOLD}종목:{RESET} ").strip()
 
@@ -1422,9 +1426,19 @@ def investment_flow(config: dict, tool: Tool):
         print(f"  {DIM}입력이 비어 있습니다.{RESET}")
         return
 
+    # 자동 정규화 (괄호·공백 자동 제거)
     parts = user_input.split()
-    ticker = parts[0].upper()
     user_hint = " ".join(parts[1:]) if len(parts) > 1 else ""
+
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from data_fetchers.stocks import normalize_ticker
+        ticker = normalize_ticker(user_input)
+    except ImportError:
+        ticker = parts[0].upper()
+
+    if ticker != parts[0].upper():
+        print(f"  {DIM}   → 정규화: '{parts[0]}' → '{ticker}'{RESET}")
 
     # ── 데이터 페처 import (방금 설치했을 수 있음) ──
     try:
