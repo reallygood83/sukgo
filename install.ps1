@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════
 # sukgo Windows 설치 스크립트 (install.sh의 PowerShell 포팅)
 #
 # 동작:
@@ -12,6 +12,13 @@
 # ═══════════════════════════════════════════════════════════════════
 
 $ErrorActionPreference = 'Stop'
+
+# ─── 한글 출력 인코딩 (Korean Windows / cp949 환경 대응) ──────────────
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding           = [System.Text.Encoding]::UTF8
+    chcp 65001 > $null
+} catch { }
 
 # ─── 경로 ──────────────────────────────────────────────────────────
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path

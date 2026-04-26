@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.8 PoC"
+VERSION = "0.0.9 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)

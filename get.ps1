@@ -1,4 +1,4 @@
-# ═══════════════════════════════════════════════════════════════════
+﻿# ═══════════════════════════════════════════════════════════════════
 # sukgo Windows 한 줄 설치 (PowerShell)
 #
 # 사용:
@@ -14,6 +14,13 @@
 # ═══════════════════════════════════════════════════════════════════
 
 $ErrorActionPreference = 'Stop'
+
+# ─── 한글 출력 인코딩 (Korean Windows / cp949 환경 대응) ──────────────
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding           = [System.Text.Encoding]::UTF8
+    chcp 65001 > $null
+} catch { }
 
 $RepoUrl   = 'https://github.com/reallygood83/sukgo.git'
 $SukgoHome = Join-Path $env:USERPROFILE '.sukgo'
