@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.5 PoC"
+VERSION = "0.0.6 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -714,6 +714,173 @@ def get_tool(key: str) -> Optional[Tool]:
 
 
 # ═════════════════════════════════════════════════════════════════════
+# 협업 모드 — 다중 백엔드 협력 패턴
+# ═════════════════════════════════════════════════════════════════════
+PERSONAS = {
+    "claude":  ("🧙", "현자", "신중·학술적·위험 우선. 역사 사례·연구 인용. 보수적 균형."),
+    "codex":   ("🚀", "모험가", "도전·기회·모멘텀 중심. 시장 트렌드 강조. 적극적 진취."),
+    "gemini":  ("📊", "분석가", "데이터·통계·정량 중심. 객관성 우선. 비교·벤치마크 능숙."),
+    "mlx":     ("🧘", "회의주의자", "모든 가정 의심. 본질부터 재구성. First Principles 사고."),
+    "ollama":  ("💎", "실용가", "즉시 실행 가능한 답. 액션 중심. 단순·명확."),
+}
+
+
+def get_persona(backend_name: str) -> tuple:
+    """백엔드 → (이모지, 이름, 설명) 페르소나 반환"""
+    return PERSONAS.get(backend_name, ("🤖", "분석가", "객관적 관점."))
+
+
+def select_mode(num_backends: int) -> str:
+    """다중 백엔드 선택 시 협업 모드 결정"""
+    if num_backends <= 1:
+        return "single"
+
+    print(f"\n  {DIM}협업 모드 선택:{RESET}\n")
+    print(f"    {BOLD}{PEACH}c{RESET}   {TEAL}비교{RESET}     각 AI 독립 답변 → 통합 저장        {DIM}(기본 · 빠름){RESET}")
+    print(f"    {BOLD}{PEACH}s{RESET}   {TEAL}종합{RESET}     비교 + 한 AI가 합의·이견·권고 종합  {DIM}(+30초){RESET}")
+    print(f"    {BOLD}{PEACH}d{RESET}   {TEAL}원탁{RESET}     {YELLOW}🏛{RESET} 페르소나 토론(2R) + 최종 합의   {DIM}(+3~5분){RESET}")
+
+    while True:
+        choice = input(f"\n  {BOLD}모드 [{PEACH}c{RESET}{BOLD}=비교]:{RESET} ").strip().lower()
+        if not choice or choice in ("c", "compare", "비교"):
+            return "compare"
+        if choice in ("s", "synth", "synthesis", "종합"):
+            return "synthesis"
+        if choice in ("d", "debate", "원탁", "토론"):
+            return "debate"
+        print(f"  {RED}c / s / d 중 선택하세요.{RESET}")
+
+
+def _format_responses_for_synth(responses: dict) -> str:
+    """종합 모드용 — 다른 AI 응답들을 종합 prompt에 포함시킬 형식"""
+    parts = []
+    for name, resp in responses.items():
+        parts.append(f"## 🤖 {name}\n\n{resp}\n")
+    return "\n---\n\n".join(parts)
+
+
+def _format_others_for_debate(others: dict) -> str:
+    """원탁 Round 2용 — 다른 페르소나들의 의견 포맷"""
+    parts = []
+    for name, resp in others.items():
+        emoji, persona_name, _ = get_persona(name)
+        parts.append(f"### {emoji} {persona_name} ({name})\n\n{resp}\n")
+    return "\n".join(parts)
+
+
+def _format_full_history(history: dict) -> str:
+    """원탁 최종 종합용 — 전체 히스토리 포맷"""
+    parts = []
+    for name, rounds in history.items():
+        emoji, persona_name, _ = get_persona(name)
+        parts.append(f"## {emoji} {persona_name} ({name})\n")
+        for i, resp in enumerate(rounds, 1):
+            parts.append(f"### Round {i}\n{resp}\n")
+    return "\n".join(parts)
+
+
+SYNTHESIS_PROMPT = """다음은 동일한 주제에 대한 {n}개 AI의 분석 결과입니다.
+
+**원래 주제**: {topic}
+
+{responses}
+
+---
+
+위 분석들을 바탕으로 다음을 한국어로 종합해주세요:
+
+## ✅ 공통 합의점
+모든 AI가 동의하는 핵심 포인트 (3~5개, 한 줄씩)
+
+## ⚠ 이견 영역
+AI들 사이에서 의견이 갈리는 지점 + 왜 갈리는지 (2~3개)
+
+## 💎 종합 권고
+사용자에게 가장 가치 있는 종합 결론 (가장 강한 인사이트 + 균형 있는 추천)
+
+## 🎯 사용자가 추가로 답해야 할 핵심 질문
+이 분석들로도 답이 안 나오는, 사용자만 답할 수 있는 질문 (1~3개)
+
+답변은 명확하고 구조적으로, 마크다운 헤더(##) 그대로 사용해주세요."""
+
+
+DEBATE_R1_PROMPT = """당신은 **{emoji} {persona_name}** 입니다.
+페르소나: {persona_desc}
+
+---
+
+## 의안
+{topic}
+
+## 분석 프레임워크 (참고)
+{base_prompt}
+
+---
+
+당신의 페르소나에 충실하게, 위 의안에 대한 핵심 의견을 5~8문장으로 명확하게 표현하세요.
+
+이후 다른 페르소나들도 같은 의안에 답할 것이며, Round 2에서 서로 검토합니다.
+당신의 관점만 진솔하게 — 균형 잡으려 하지 말고 페르소나 정체성에 충실하세요."""
+
+
+DEBATE_R2_PROMPT = """당신은 **{emoji} {persona_name}** 입니다.
+페르소나: {persona_desc}
+
+---
+
+## 의안
+{topic}
+
+## 당신의 Round 1 의견
+{my_opinion}
+
+## 다른 페르소나들의 Round 1 의견
+{others}
+
+---
+
+다음 구조로 답변해주세요:
+
+## 🤝 동의하는 점
+다른 페르소나 의견에서 동의하는 부분 + 그 이유 (1~2개)
+
+## ⚔ 반박하는 점
+다른 페르소나 의견에서 동의하기 어려운 부분 + 근거 (1~2개)
+
+## 🔄 입장 정교화
+위 두 가지를 바탕으로 당신의 입장을 어떻게 더 명확히 할 것인가
+
+5~8문장 이내로. 당신의 페르소나 정체성을 유지하면서."""
+
+
+DEBATE_FINAL_PROMPT = """## 의안
+{topic}
+
+## 원탁 회의 전체 기록
+{n}명의 페르소나가 2 라운드 토론했습니다.
+
+{history}
+
+---
+
+이 토론을 바탕으로 사용자에게 도움이 될 최종 정리를 한국어로 작성해주세요:
+
+## ✅ 합의된 결론
+모든 페르소나가 동의하는 점 (이견 없는 영역)
+
+## ⚠ 끝까지 갈린 의견
+평행선으로 남은 영역 + 사용자가 직접 판단해야 할 차원
+
+## 💎 사용자에게 권고하는 최종 결정
+종합 결론 + 즉시 실행 가능한 다음 액션 (1~3개)
+
+## 🎯 사용자가 자문해야 할 마지막 질문
+이 결정을 자신 있게 하기 위해 사용자가 자기 자신에게 물어야 할 핵심 질문 1개
+
+답변은 명확하고 실행 중심으로, 마크다운 헤더(##) 그대로."""
+
+
+# ═════════════════════════════════════════════════════════════════════
 # 백엔드
 # ═════════════════════════════════════════════════════════════════════
 class Backend:
@@ -1063,23 +1230,31 @@ def save_session(
     save_dir: Path,
     tool: str,
     topic: str,
-    responses: dict,  # {backend_name: response_text}
+    responses: dict,  # {backend_name: response_text} or with __synthesis__/__debate_final__
+    mode: str = "compare",  # single / compare / synthesis / debate
 ) -> Path:
     """
-    세션을 옵시디언 친화 마크다운으로 저장.
-    responses가 1개면 단일 모드, 2개 이상이면 비교 모드.
+    세션을 옵시디언 친화 마크다운으로 저장 (모드별 다른 구조)
     """
     now = datetime.now()
     safe_topic = re.sub(r"[^\w가-힣\-]+", "_", topic)[:50].strip("_")
-    backend_names = list(responses.keys())
-    is_multi = len(backend_names) > 1
 
-    suffix = "compare" if is_multi else backend_names[0]
+    # 특수 키 분리
+    synthesis = responses.pop("__synthesis__", None)
+    debate_final = responses.pop("__debate_final__", None)
+
+    backend_names = list(responses.keys())
+    suffix_map = {
+        "single": backend_names[0] if backend_names else "single",
+        "compare": "compare",
+        "synthesis": "synthesis",
+        "debate": "debate",
+    }
+    suffix = suffix_map.get(mode, mode)
     filename = f"{now:%Y-%m-%d_%H%M}_{tool}_{suffix}_{safe_topic}.md"
     filepath = save_dir / filename
 
     backends_yaml = "[" + ", ".join(backend_names) + "]"
-    mode = "comparison" if is_multi else "single"
 
     body = f"""---
 tool: {tool}
@@ -1090,27 +1265,45 @@ created: {now.isoformat()}
 tags:
   - sukgo
   - {tool}
+  - {mode}
   - decision-thinking
 ---
 
-# 🛡️ {tool}: {topic}
+# {tool}: {topic}
 
 """
 
-    if is_multi:
-        body += f"> {len(backend_names)}개 AI의 관점을 비교한 결과입니다.\n\n"
+    # 모드별 본문 구조
+    if mode == "debate" and debate_final:
+        body += "> 🏛 **원탁 토론** — 여러 페르소나가 2 라운드 토론한 결과.\n\n"
+        body += "## 🎯 최종 합의 및 권고\n\n" + debate_final + "\n\n"
+        body += "---\n\n# 📝 토론 전체 기록\n\n"
+        for backend_name, full_text in responses.items():
+            emoji, persona_name, _ = get_persona(backend_name)
+            body += f"\n---\n\n## {emoji} {persona_name} ({backend_name})\n\n{full_text}\n"
+
+    elif mode == "synthesis" and synthesis:
+        body += f"> 🎯 **종합 모드** — {len(backend_names)}개 AI 비교 + 종합 권고.\n\n"
+        body += "## 🎯 종합 권고\n\n" + synthesis + "\n\n"
+        body += "---\n\n# 📝 각 AI 분석\n\n"
         for backend_name, response in responses.items():
             body += f"\n---\n\n## 🤖 {backend_name}\n\n{response}\n"
-    else:
-        backend_name = backend_names[0]
-        body += responses[backend_name]
+
+    elif mode == "compare" or len(backend_names) > 1:
+        body += f"> 📊 **비교 모드** — {len(backend_names)}개 AI 관점.\n\n"
+        for backend_name, response in responses.items():
+            body += f"\n---\n\n## 🤖 {backend_name}\n\n{response}\n"
+
+    else:  # single
+        if backend_names:
+            body += responses[backend_names[0]]
 
     body += f"""
 
 ---
 
 > Generated by **sukgo** · made by 배움의 달인 ✨
-> Backend: `{', '.join(backend_names)}` · {now:%Y-%m-%d %H:%M}
+> Mode: `{mode}` · Backend: `{', '.join(backend_names)}` · {now:%Y-%m-%d %H:%M}
 """
 
     filepath.write_text(body, encoding="utf-8")
@@ -1245,6 +1438,117 @@ def select_backends_for_run(config: dict) -> list:
         print(f"  {RED}유효한 번호 또는 'a'를 입력하세요.{RESET}")
 
 
+def run_compare(prompt: str, selected: list, render_inline: bool = True) -> dict:
+    """비교 모드 — 각 AI 독립 답변 (기존 동작)"""
+    responses = {}
+    for backend in selected:
+        if render_inline and len(selected) > 1:
+            print(f"\n  {TEAL}── {backend.name} ──{RESET}")
+        print(f"  {TEAL}⠋  {backend.name} 응답 준비 중... (10~60초){RESET}")
+        resp = backend.chat(prompt)
+        if resp:
+            responses[backend.name] = resp
+            if render_inline and len(selected) > 1:
+                render_response(resp)
+        else:
+            print(f"  {YELLOW}⚠  {backend.name} 응답 실패 — 건너뜁니다{RESET}")
+    return responses
+
+
+def run_synthesis(prompt: str, topic: str, selected: list) -> dict:
+    """종합 모드 — 비교 + 마지막에 한 AI가 종합"""
+    # 1. 비교 (각자 답)
+    responses = run_compare(prompt, selected, render_inline=True)
+    if len(responses) < 2:
+        return responses
+
+    # 2. 종합 (첫 백엔드가 종합)
+    synthesizer = selected[0]
+    print(f"\n  {BOLD}{TEAL}══ 🎯 종합 단계 ({synthesizer.name}) ══{RESET}")
+    print(f"  {TEAL}⠋  {synthesizer.name}이 모든 의견을 종합 중... (30~60초){RESET}")
+
+    synth_prompt = SYNTHESIS_PROMPT.format(
+        n=len(responses),
+        topic=topic,
+        responses=_format_responses_for_synth(responses),
+    )
+    synthesis = synthesizer.chat(synth_prompt)
+    if synthesis:
+        responses["__synthesis__"] = synthesis
+        render_response(synthesis)
+    return responses
+
+
+def run_debate(prompt: str, topic: str, selected: list) -> dict:
+    """원탁 토론 — 페르소나 + 2 라운드 + 최종 합의"""
+    history = {b.name: [] for b in selected}
+
+    print(f"\n  {BOLD}{YELLOW}🏛  원탁 회의 시작{RESET}")
+    print(f"  {DIM}참석:{RESET} {', '.join([f'{get_persona(b.name)[0]} {get_persona(b.name)[1]} ({b.name})' for b in selected])}")
+    print(f"  {DIM}의안:{RESET} {topic}\n")
+
+    # ── Round 1 ──
+    print(f"  {BOLD}{PURPLE}── Round 1: 각자 의견 ──{RESET}")
+    for b in selected:
+        emoji, persona_name, persona_desc = get_persona(b.name)
+        print(f"\n  {TEAL}⠋  {emoji} {persona_name} ({b.name}) 의견 작성 중...{RESET}")
+        r1 = b.chat(DEBATE_R1_PROMPT.format(
+            emoji=emoji, persona_name=persona_name, persona_desc=persona_desc,
+            topic=topic, base_prompt=prompt[:1500],
+        ))
+        if r1:
+            history[b.name].append(r1)
+            print(f"\n  {BOLD}{emoji} {persona_name} ({b.name}):{RESET}")
+            for line in r1.split("\n"):
+                print(f"     {line}")
+
+    if not any(history.values()):
+        return {}
+
+    # ── Round 2 ──
+    print(f"\n\n  {BOLD}{PURPLE}── Round 2: 토론 (서로 반박/동의) ──{RESET}")
+    for b in selected:
+        if not history[b.name]:
+            continue
+        emoji, persona_name, persona_desc = get_persona(b.name)
+        others = {n: h[-1] for n, h in history.items() if n != b.name and h}
+        if not others:
+            continue
+
+        print(f"\n  {TEAL}⠋  {emoji} {persona_name} ({b.name}) 반박 작성 중...{RESET}")
+        r2 = b.chat(DEBATE_R2_PROMPT.format(
+            emoji=emoji, persona_name=persona_name, persona_desc=persona_desc,
+            topic=topic,
+            my_opinion=history[b.name][-1],
+            others=_format_others_for_debate(others),
+        ))
+        if r2:
+            history[b.name].append(r2)
+            print(f"\n  {BOLD}{emoji} {persona_name}의 반박:{RESET}")
+            render_response(r2)
+
+    # ── 최종 합의 ──
+    print(f"\n\n  {BOLD}{PURPLE}── 최종 합의 ──{RESET}")
+    synthesizer = selected[0]
+    print(f"  {TEAL}⠋  {synthesizer.name}이 토론을 종합 중... (30~60초){RESET}")
+    final = synthesizer.chat(DEBATE_FINAL_PROMPT.format(
+        topic=topic,
+        n=len(selected),
+        history=_format_full_history(history),
+    ))
+
+    # 응답 통합 (저장용)
+    responses = {}
+    for name, rounds in history.items():
+        responses[name] = "\n\n---\n\n".join([f"### Round {i+1}\n{r}" for i, r in enumerate(rounds)])
+    if final:
+        responses["__debate_final__"] = final
+        print(f"\n  {BOLD}{TEAL}══ 🎯 합의 및 최종 권고 ══{RESET}")
+        render_response(final)
+
+    return responses
+
+
 def tool_flow(config: dict, tool: Tool):
     """선택한 사고 도구 실행 (Investment는 별도 흐름으로 분기)"""
     if tool.needs_data_fetch and tool.save_id == "investment":
@@ -1255,10 +1559,15 @@ def tool_flow(config: dict, tool: Tool):
     if not selected:
         return
 
-    is_multi = len(selected) > 1
-    mode_label = f"비교 모드 · {len(selected)}개 AI" if is_multi else f"via {selected[0].name}"
+    mode = select_mode(len(selected))  # single / compare / synthesis / debate
 
-    print(f"\n  {BOLD}{tool.emoji}  {tool.name}{RESET}  {DIM}({TEAL}{mode_label}{DIM}){RESET}")
+    mode_labels = {
+        "single": f"via {selected[0].name}",
+        "compare": f"비교 · {len(selected)}개 AI",
+        "synthesis": f"종합 · {len(selected)}개 AI",
+        "debate": f"🏛 원탁 토론 · {len(selected)}개 페르소나",
+    }
+    print(f"\n  {BOLD}{tool.emoji}  {tool.name}{RESET}  {DIM}({TEAL}{mode_labels[mode]}{DIM}){RESET}")
     print(f"  {DIM}{tool.short_desc}{RESET}\n")
     topic = input(f"  {BOLD}주제:{RESET} ").strip()
 
@@ -1267,37 +1576,30 @@ def tool_flow(config: dict, tool: Tool):
         return
 
     prompt = tool.get_prompt().format(topic=topic)
-    responses = {}
 
-    for backend in selected:
-        if is_multi:
-            print(f"\n  {TEAL}── {backend.name} ──{RESET}")
-        print(f"  {TEAL}⠋  {backend.name} 응답 준비 중... (10~60초){RESET}")
-        response = backend.chat(prompt)
-        if response:
-            responses[backend.name] = response
-            if is_multi:
-                render_response(response)
-        else:
-            print(f"  {YELLOW}⚠  {backend.name} 응답 실패 — 건너뜁니다{RESET}")
+    # 모드별 실행
+    if mode == "synthesis":
+        responses = run_synthesis(prompt, topic, selected)
+    elif mode == "debate":
+        responses = run_debate(prompt, topic, selected)
+    else:  # single, compare
+        responses = run_compare(prompt, selected, render_inline=(mode == "compare"))
+        if mode == "single" and responses:
+            render_response(list(responses.values())[0])
 
     if not responses:
         print(f"\n  {RED}❌ 모든 백엔드 응답 실패{RESET}")
         return
 
-    if not is_multi:
-        render_response(list(responses.values())[0])
-
     # 자동 저장
     try:
         save_dir = Path(config["save_path"])
         save_dir.mkdir(parents=True, exist_ok=True)
-        filepath = save_session(save_dir, tool.save_id, topic, responses)
+        filepath = save_session(save_dir, tool.save_id, topic, responses, mode=mode)
         home = str(Path.home())
         short = str(filepath).replace(home, "~")
         print(f"\n  {GREEN}💾 저장됨:{RESET} {DIM}{short}{RESET}")
-        if is_multi:
-            print(f"  {DIM}   {len(responses)}개 AI 응답이 한 파일에 통합됨{RESET}")
+        print(f"  {DIM}   모드: {mode_labels[mode]}{RESET}")
     except Exception as e:
         print(f"\n  {YELLOW}⚠  저장 실패: {e}{RESET}")
 
@@ -1485,50 +1787,41 @@ def investment_flow(config: dict, tool: Tool):
 
     data_summary = format_data_summary(data)
 
-    # ── 백엔드 선택 ──
+    # ── 백엔드 선택 + 모드 ──
     selected = select_backends_for_run(config)
     if not selected:
         return
 
-    is_multi = len(selected) > 1
+    mode = select_mode(len(selected))
     user_topic = f"{ticker}" + (f"  ({user_hint})" if user_hint else "")
 
     # ── 프롬프트 조립 ──
     prompt = tool.get_prompt().format(topic=user_topic, stock_data=data_summary)
 
-    # ── AI 호출 ──
-    print(f"\n  {TEAL}⠋  9섹션 종합 리포트 생성 중... (백엔드별 30~120초){RESET}")
-    responses = {}
-    for backend in selected:
-        if is_multi:
-            print(f"\n  {TEAL}── {backend.name} ──{RESET}")
-        print(f"  {TEAL}⠋  {backend.name} 분석 중...{RESET}")
-        response = backend.chat(prompt)
-        if response:
-            responses[backend.name] = response
-            if is_multi:
-                render_response(response)
-        else:
-            print(f"  {YELLOW}⚠  {backend.name} 응답 실패{RESET}")
+    # ── 모드별 실행 ──
+    if mode == "synthesis":
+        responses = run_synthesis(prompt, user_topic, selected)
+    elif mode == "debate":
+        responses = run_debate(prompt, user_topic, selected)
+    else:  # single, compare
+        print(f"\n  {TEAL}⠋  9섹션 종합 리포트 생성 중... (백엔드별 30~120초){RESET}")
+        responses = run_compare(prompt, selected, render_inline=(mode == "compare"))
+        if mode == "single" and responses:
+            render_response(list(responses.values())[0])
 
     if not responses:
         print(f"\n  {RED}❌ 모든 백엔드 응답 실패{RESET}")
         return
 
-    if not is_multi:
-        render_response(list(responses.values())[0])
-
     # ── 저장 (Investment는 별도 폴더) ──
     try:
         save_dir = Path(config["save_path"]) / "_investments"
         save_dir.mkdir(parents=True, exist_ok=True)
-        filepath = save_session(save_dir, tool.save_id, user_topic, responses)
+        filepath = save_session(save_dir, tool.save_id, user_topic, responses, mode=mode)
         home = str(Path.home())
         short = str(filepath).replace(home, "~")
         print(f"\n  {GREEN}💾 저장됨:{RESET} {DIM}{short}{RESET}")
         print(f"  {DIM}   _investments/ 하위 폴더에 자동 분류됨{RESET}")
-        if is_multi:
-            print(f"  {DIM}   {len(responses)}개 AI 응답이 한 파일에 통합됨{RESET}")
     except Exception as e:
         print(f"\n  {YELLOW}⚠  저장 실패: {e}{RESET}")
 
