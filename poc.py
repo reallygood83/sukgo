@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.7 PoC"
+VERSION = "0.0.8 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -38,6 +38,17 @@ OLLAMA_DEFAULT_URL = "http://localhost:11434/v1"
 # ═════════════════════════════════════════════════════════════════════
 # ANSI 색상
 # ═════════════════════════════════════════════════════════════════════
+# Windows: cmd.exe / PowerShell 에서도 ANSI 색상이 보이도록 VT 모드 활성화
+# (Windows Terminal·VS Code 터미널은 이미 지원하므로 영향 없음)
+if sys.platform == "win32":
+    try:
+        from ctypes import windll  # type: ignore[attr-defined]
+        _h = windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        # ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING = 7
+        windll.kernel32.SetConsoleMode(_h, 7)
+    except Exception:
+        pass
+
 RESET = "\033[0m"
 BOLD = "\033[1m"
 DIM = "\033[2m"
@@ -1984,15 +1995,21 @@ def update_flow():
         print(f"  {RED}❌ git reset 실패:{RESET} {e}")
         return
 
-    # 4) install.sh 재실행 (의존성 갱신)
-    install_sh = install_dir / "install.sh"
-    if install_sh.exists():
+    # 4) install 스크립트 재실행 (의존성 갱신) — OS별 분기
+    if sys.platform == "win32":
+        install_script = install_dir / "install.ps1"
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(install_script)]
+    else:
+        install_script = install_dir / "install.sh"
+        cmd = ["bash", str(install_script)]
+
+    if install_script.exists():
         print(f"  {TEAL}⠋  의존성 동기화 중...{RESET}")
-        r = subprocess.run(["bash", str(install_sh)], capture_output=True, text=True, timeout=300)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if r.returncode == 0:
             print(f"  {GREEN}✅ 의존성 동기화 완료{RESET}")
         else:
-            print(f"  {YELLOW}⚠  install.sh 경고:{RESET}\n{DIM}{r.stderr[-300:]}{RESET}")
+            print(f"  {YELLOW}⚠  설치 스크립트 경고:{RESET}\n{DIM}{r.stderr[-300:]}{RESET}")
 
     print(f"\n  {GREEN}{BOLD}🎉 업데이트 완료!{RESET} {DIM}sukgo 를 다시 실행하면 새 버전이 적용됩니다.{RESET}\n")
 

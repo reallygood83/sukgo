@@ -58,7 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 
            ● claude · codex · gemini · MLX · Ollama
                   비교 모드 · 옵시디언 자동 저장
-                made by 배움의 달인 ✨   v0.0.7
+                made by 배움의 달인 ✨   v0.0.8
 ```
 
 ---
@@ -90,29 +90,43 @@ ChatGPT 기록처럼 외부 서버에 갇히지 않음.
 
 ## 🚀 한 줄 설치
 
+### 🍎 macOS / 🐧 Linux
 ```bash
 curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | bash
 ```
 
-→ 1분 안에 모든 것 자동 설치. 끝나면 새 터미널에서 `sukgo`.
+### 🪟 Windows (PowerShell)
+```powershell
+irm https://raw.githubusercontent.com/reallygood83/sukgo/main/get.ps1 | iex
+```
+> 💡 **PowerShell**(시작 메뉴 → "PowerShell" 검색) 또는 **Windows Terminal**에서 실행하세요. cmd.exe 는 권장하지 않습니다.
 
-### 🌱 Python·터미널 처음이신 분?
-[**`docs/ONBOARDING.md`**](docs/ONBOARDING.md) — 5분 가이드 (Homebrew · Python · AI CLI 설치 안내 + FAQ).
+→ 모든 OS 1~2분 안에 자동 설치. 끝나면 **새 터미널**을 열고 `sukgo`.
+
+### 🌱 처음이신 분?
+[**`docs/ONBOARDING.md`**](docs/ONBOARDING.md) — 5분 가이드 (Python · AI CLI 설치 안내 + FAQ).
 
 ### 🛠 개발자용 (직접 클론)
 ```bash
-git clone https://github.com/reallygood83/sukgo.git
-cd sukgo
-./install.sh
+# macOS / Linux
+git clone https://github.com/reallygood83/sukgo.git && cd sukgo && ./install.sh
+```
+```powershell
+# Windows
+git clone https://github.com/reallygood83/sukgo.git; cd sukgo; .\install.ps1
 ```
 
 ### ✨ 자동으로 처리되는 것
-- ✅ Python 3.9+ 자동 탐지 (없으면 설치 안내)
-- ✅ **격리된 sukgo 전용 venv** (`~/.sukgo/venv`) 생성 — 사용자 다른 작업과 충돌 0
-- ✅ pip 자동 업그레이드 + 의존성 설치 (yfinance, finance-datareader, requests)
-- ✅ Wrapper script (`~/.local/bin/sukgo` — 어디서든 자기 venv 자동 사용)
-- ✅ PATH 자동 등록 (`.zshrc` / `.bashrc`)
-- ✅ 의존성 import 검증
+| 항목 | macOS / Linux | Windows |
+|------|---------------|---------|
+| Python 탐지 | `python3.12` ~ `python3` | `py -3.12` ~ `py -3` / `python` |
+| venv 위치 | `~/.sukgo/venv` | `%USERPROFILE%\.sukgo\venv` |
+| Wrapper | `~/.local/bin/sukgo` | `%USERPROFILE%\.sukgo\bin\sukgo.cmd` + `sukgo.ps1` |
+| PATH 등록 | `.zshrc` / `.bashrc` | User 환경변수 |
+| 의존성 | yfinance · finance-datareader · requests | (동일) |
+| 콘솔 색상 | ANSI 기본 지원 | VT 모드 자동 활성화 (Win10+ cmd / PowerShell) |
+
+> 🔒 **격리 보장**: sukgo 는 사용자의 시스템 Python·다른 venv·conda 환경을 일절 건드리지 않습니다.
 
 ---
 
@@ -135,7 +149,12 @@ sukgo update
 
 ### 방법 3 — 한 줄 설치 재실행 (완전 재설치)
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | bash
+```
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/reallygood83/sukgo/main/get.ps1 | iex
 ```
 → 코드·의존성·wrapper 전부 깨끗하게 다시 설치.
 
@@ -150,13 +169,13 @@ sukgo --version
 
 ## 📋 요구사항
 
-| 항목 | 필수 | 비고 |
-|------|------|------|
-| **Python 3.9+** | ✅ | macOS는 보통 기본 설치됨 |
-| **Git** | ✅ | `brew install git` |
-| **AI CLI 1개 이상** | ✅ | 아래 중 택 1+ |
-| ↳ Claude Code | ⭕ | Claude Pro/Max 구독 |
-| ↳ Codex CLI | ⭕ | ChatGPT Plus 구독 |
+| 항목 | 필수 | macOS | Linux | Windows |
+|------|------|-------|-------|---------|
+| **Python 3.9+** | ✅ | `brew install python@3.12` (보통 기본 설치) | `sudo apt install python3.11` | `winget install Python.Python.3.12` |
+| **Git** | ✅ | `brew install git` | `sudo apt install git` | `winget install Git.Git` |
+| **AI CLI 1개 이상** | ✅ | (모든 OS 동일 — 아래) | | |
+| ↳ Claude Code | ⭕ | Claude Pro/Max 구독 | | |
+| ↳ Codex CLI | ⭕ | ChatGPT Plus 구독 | | |
 | ↳ Gemini CLI | ⭕ | Google 무료 티어 |
 | **MLX** | ⭕ | Apple Silicon 로컬 |
 | **Ollama** | ⭕ | 크로스 플랫폼 로컬 |
@@ -371,25 +390,54 @@ prompts/investment.md   ← 9섹션 분석 (코드와 분리)
 
 ## 🐛 트러블슈팅
 
-### `command not found: sukgo`
+### `command not found: sukgo` (macOS / Linux)
 새 터미널 창을 여세요. 또는:
 ```bash
 source ~/.zshrc    # 또는 ~/.bashrc
 ```
 
+### `'sukgo' 용어가 cmdlet ... 인식되지 않습니다` (Windows)
+새 PowerShell 창을 여세요. 그래도 안 되면 PATH 직접 확인:
+```powershell
+$env:Path -split ';' | Select-String '.sukgo'
+# 비어 있으면 PATH 수동 추가:
+[Environment]::SetEnvironmentVariable('Path', "$env:Path;$env:USERPROFILE\.sukgo\bin", 'User')
+```
+
+### `irm ... | iex` 실행 시 ExecutionPolicy 차단 (Windows)
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+irm https://raw.githubusercontent.com/reallygood83/sukgo/main/get.ps1 | iex
+```
+
 ### Python 의존성 에러
 ```bash
+# macOS / Linux
 ~/.sukgo/venv/bin/pip install --upgrade pip
 ~/.sukgo/venv/bin/pip install yfinance finance-datareader requests
+```
+```powershell
+# Windows
+& "$env:USERPROFILE\.sukgo\venv\Scripts\python.exe" -m pip install --upgrade pip
+& "$env:USERPROFILE\.sukgo\venv\Scripts\python.exe" -m pip install yfinance finance-datareader requests
 ```
 
 ### 가상환경 충돌
 sukgo는 `~/.sukgo/venv` 격리 환경 사용. 사용자 다른 venv 영향 받지 않음.
-재설치하려면:
+완전 재설치:
 ```bash
-rm -rf ~/.sukgo
+# macOS / Linux
+rm -rf ~/.sukgo ~/.local/bin/sukgo
 curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | bash
 ```
+```powershell
+# Windows
+Remove-Item -Recurse -Force "$env:USERPROFILE\.sukgo"
+irm https://raw.githubusercontent.com/reallygood83/sukgo/main/get.ps1 | iex
+```
+
+### Windows 한글 깨짐 (cmd.exe)
+sukgo wrapper가 `chcp 65001`로 UTF-8 코드페이지를 자동 설정하므로 정상 동작합니다. 그래도 깨지면 **Windows Terminal** (시작 메뉴 → "Terminal" 검색) 사용을 권장합니다.
 
 ### AI 응답이 너무 느림
 - 단일 AI: 10~60초 정상
@@ -416,9 +464,10 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 |------|------|------|
 | v0.0.5 | ✅ 완료 | 13 도구 + 5 백엔드 + 데이터 페처 |
 | v0.0.6 | ✅ 완료 | 한 줄 설치 + 협업 모드 4종(single·compare·synthesis·debate) + Investment 포팅 |
-| v0.0.7 | ✅ 현재 | `sukgo update` · 메뉴 `u` · `--version` · 자동 의존성 동기화 |
-| v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 |
-| v0.3 | 곧 | PyPI 정식 + Windows·Linux 풀 검증 + DART API |
+| v0.0.7 | ✅ 완료 | `sukgo update` · 메뉴 `u` · `--version` · 자동 의존성 동기화 |
+| v0.0.8 | ✅ 현재 | **Windows 풀 지원** (`get.ps1` · `install.ps1` · VT 모드 자동 활성화 · UTF-8 코드페이지) |
+| v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 + 추가 백엔드 (Hermes/OpenClaude 등) |
+| v0.3 | 곧 | PyPI 정식 + DART API |
 | v0.5 | 중기 | 도메인 확장 (부동산·관계·건강) + 플러그인 시스템 |
 | v1.0 | 장기 | 영문 i18n + Homebrew tap + 커뮤니티 |
 
