@@ -51,9 +51,14 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
       i   📈  Investment          주식 9섹션 (yfinance/FDR 자동)
       e   👶  Education           자녀 교육 (발달학+연구)
 
+   ▌ 설정
+      s    설정 변경
+      u    업데이트 확인  (최신 버전으로)
+      q    종료
+
            ● claude · codex · gemini · MLX · Ollama
                   비교 모드 · 옵시디언 자동 저장
-                made by 배움의 달인 ✨   v0.0.5
+                made by 배움의 달인 ✨   v0.0.7
 ```
 
 ---
@@ -108,6 +113,38 @@ cd sukgo
 - ✅ Wrapper script (`~/.local/bin/sukgo` — 어디서든 자기 venv 자동 사용)
 - ✅ PATH 자동 등록 (`.zshrc` / `.bashrc`)
 - ✅ 의존성 import 검증
+
+---
+
+## 🔄 업데이트
+
+새 버전이 나오면 셋 중 아무 방법이나 사용:
+
+### 방법 1 — 메인 메뉴에서 (가장 쉬움)
+```
+sukgo
+> u   (업데이트 확인)
+```
+→ 자동으로 변경 사항 미리보기 → 확인 후 최신으로 동기화 + 의존성 갱신.
+
+### 방법 2 — 서브커맨드
+```bash
+sukgo update
+```
+→ 메뉴를 거치지 않고 바로 업데이트.
+
+### 방법 3 — 한 줄 설치 재실행 (완전 재설치)
+```bash
+curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | bash
+```
+→ 코드·의존성·wrapper 전부 깨끗하게 다시 설치.
+
+> 💡 이미 최신이면 `✅ 이미 최신입니다` 라고 알려주고 끝나므로 안심하고 자주 눌러도 됨.
+
+### 현재 버전 확인
+```bash
+sukgo --version
+```
 
 ---
 
@@ -377,8 +414,10 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 
 | 버전 | 상태 | 핵심 |
 |------|------|------|
-| v0.0.5 | ✅ 현재 | 13 도구 + 5 백엔드 + 데이터 페처 + 한 줄 설치 |
-| v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 + Release |
+| v0.0.5 | ✅ 완료 | 13 도구 + 5 백엔드 + 데이터 페처 |
+| v0.0.6 | ✅ 완료 | 한 줄 설치 + 협업 모드 4종(single·compare·synthesis·debate) + Investment 포팅 |
+| v0.0.7 | ✅ 현재 | `sukgo update` · 메뉴 `u` · `--version` · 자동 의존성 동기화 |
+| v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 |
 | v0.3 | 곧 | PyPI 정식 + Windows·Linux 풀 검증 + DART API |
 | v0.5 | 중기 | 도메인 확장 (부동산·관계·건강) + 플러그인 시스템 |
 | v1.0 | 장기 | 영문 i18n + Homebrew tap + 커뮤니티 |

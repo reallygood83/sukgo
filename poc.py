@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.6 PoC"
+VERSION = "0.0.7 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -1361,6 +1361,7 @@ def banner(config: dict):
     print(f"   {PURPLE}▌{RESET} {BOLD}설정{RESET}")
     print()
     print(f"      {PEACH}{BOLD}s{RESET}    설정 변경")
+    print(f"      {PEACH}{BOLD}u{RESET}    업데이트 확인  {DIM}(최신 버전으로){RESET}")
     print(f"      {PEACH}{BOLD}q{RESET}    종료")
     print()
 
@@ -1876,9 +1877,140 @@ def settings_flow(config: dict) -> dict:
 
 
 # ═════════════════════════════════════════════════════════════════════
+# 업데이트
+# ═════════════════════════════════════════════════════════════════════
+SUKGO_HOME_DIR = Path.home() / ".sukgo"
+SUKGO_SOURCE_DIR = SUKGO_HOME_DIR / "source"
+GET_SH_URL = "https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh"
+
+
+def _detect_install_dir() -> Optional[Path]:
+    """sukgo 가 설치된 git 작업 폴더를 찾는다.
+
+    1. ~/.sukgo/source/.git  (한 줄 설치로 깔린 표준 위치)
+    2. 현재 실행 중인 poc.py 가 들어있는 git 저장소  (개발자 모드)
+    """
+    if (SUKGO_SOURCE_DIR / ".git").exists():
+        return SUKGO_SOURCE_DIR
+
+    here = Path(__file__).resolve().parent
+    if (here / ".git").exists():
+        return here
+    return None
+
+
+def update_flow():
+    """현재 sukgo 를 최신으로 업데이트.
+
+    - git 저장소가 있으면 → git fetch + reset --hard origin/main + install.sh
+    - 없으면 → curl 한 줄 설치 안내
+    """
+    print(f"\n  {BOLD}🔄  sukgo 업데이트{RESET}\n")
+
+    install_dir = _detect_install_dir()
+
+    if install_dir is None:
+        print(f"  {YELLOW}⚠  git 기반 설치가 아니라 자동 업데이트가 어려워요.{RESET}\n")
+        print(f"  {DIM}아래 한 줄을 터미널에 붙여 넣어 주세요:{RESET}\n")
+        print(f"  {GREEN}curl -fsSL {GET_SH_URL} | bash{RESET}\n")
+        return
+
+    print(f"  {DIM}설치 위치:{RESET} {install_dir}\n")
+
+    # 1) git fetch + 최신 버전 확인
+    try:
+        print(f"  {TEAL}⠋  최신 버전 확인 중...{RESET}")
+        subprocess.run(
+            ["git", "-C", str(install_dir), "fetch", "--quiet", "origin"],
+            check=True, timeout=60,
+        )
+        local = subprocess.run(
+            ["git", "-C", str(install_dir), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        remote = subprocess.run(
+            ["git", "-C", str(install_dir), "rev-parse", "origin/main"],
+            check=True, capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+        print(f"  {RED}❌ git 호출 실패:{RESET} {e}")
+        return
+
+    if local == remote:
+        print(f"  {GREEN}✅ 이미 최신입니다 (v{VERSION}){RESET}\n")
+        return
+
+    # 로컬이 원격보다 앞서 있으면 (개발자 모드) — reset 하면 커밋 유실됨
+    ahead = subprocess.run(
+        ["git", "-C", str(install_dir), "merge-base", "--is-ancestor", remote, local],
+    ).returncode == 0
+    if ahead:
+        print(f"  {YELLOW}⚠  로컬이 원격보다 앞서 있어요 (개발자 모드).{RESET}")
+        print(f"  {DIM}자동 업데이트는 로컬 커밋을 덮어쓰므로 건너뜁니다.{RESET}\n")
+        return
+
+    print(f"  {YELLOW}🆕 새 버전이 있습니다.{RESET}")
+    print(f"  {DIM}  현재:{RESET} {local[:8]}")
+    print(f"  {DIM}  최신:{RESET} {remote[:8]}\n")
+
+    # 2) 변경 로그 미리보기
+    try:
+        log = subprocess.run(
+            ["git", "-C", str(install_dir), "log", "--oneline", f"{local}..{remote}"],
+            check=True, capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+        if log:
+            print(f"  {BOLD}변경 사항:{RESET}")
+            for line in log.splitlines()[:10]:
+                print(f"    {DIM}•{RESET} {line}")
+            print()
+    except subprocess.CalledProcessError:
+        pass
+
+    confirm = input(f"  업데이트 할까요? [Y/n] ").strip().lower()
+    if confirm and confirm not in ("y", "yes"):
+        print(f"  {DIM}취소됨{RESET}\n")
+        return
+
+    # 3) git reset --hard
+    try:
+        print(f"\n  {TEAL}⠋  최신으로 동기화 중...{RESET}")
+        subprocess.run(
+            ["git", "-C", str(install_dir), "reset", "--hard", "--quiet", "origin/main"],
+            check=True, timeout=30,
+        )
+        print(f"  {GREEN}✅ 코드 업데이트 완료{RESET}")
+    except subprocess.CalledProcessError as e:
+        print(f"  {RED}❌ git reset 실패:{RESET} {e}")
+        return
+
+    # 4) install.sh 재실행 (의존성 갱신)
+    install_sh = install_dir / "install.sh"
+    if install_sh.exists():
+        print(f"  {TEAL}⠋  의존성 동기화 중...{RESET}")
+        r = subprocess.run(["bash", str(install_sh)], capture_output=True, text=True, timeout=300)
+        if r.returncode == 0:
+            print(f"  {GREEN}✅ 의존성 동기화 완료{RESET}")
+        else:
+            print(f"  {YELLOW}⚠  install.sh 경고:{RESET}\n{DIM}{r.stderr[-300:]}{RESET}")
+
+    print(f"\n  {GREEN}{BOLD}🎉 업데이트 완료!{RESET} {DIM}sukgo 를 다시 실행하면 새 버전이 적용됩니다.{RESET}\n")
+
+
+# ═════════════════════════════════════════════════════════════════════
 # 메인 루프
 # ═════════════════════════════════════════════════════════════════════
 def main():
+    # CLI 서브커맨드: `sukgo update`, `sukgo --version`
+    if len(sys.argv) > 1:
+        sub = sys.argv[1].lower()
+        if sub in ("update", "upgrade", "u"):
+            update_flow()
+            return
+        if sub in ("--version", "-v", "version"):
+            print(f"sukgo v{VERSION}")
+            return
+
     config = load_config()
     config = migrate_config(config)
     if not config or "backends" not in config or "save_path" not in config:
@@ -1901,6 +2033,9 @@ def main():
                 input(f"\n  {DIM}Enter → 메인 메뉴{RESET} ")
         elif choice == "s":
             config = settings_flow(config)
+            input(f"\n  {DIM}Enter → 메인 메뉴{RESET} ")
+        elif choice == "u":
+            update_flow()
             input(f"\n  {DIM}Enter → 메인 메뉴{RESET} ")
 
 
