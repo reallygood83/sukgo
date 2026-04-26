@@ -1329,52 +1329,75 @@ def ensure_data_fetchers() -> bool:
     # virtualenv 감지: venv 안에서는 --user 플래그 사용 불가
     in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 
-    pip_cmd = [sys.executable, "-m", "pip", "install", "--quiet"]
+    base_cmd = [sys.executable, "-m", "pip", "install", "--quiet"]
     if not in_venv:
-        pip_cmd.append("--user")
-    pip_cmd.extend(missing)
+        base_cmd.append("--user")
 
-    user_flag = "" if in_venv else "--user "
-    print(f"\n  {TEAL}⠋  설치 중... pip install {user_flag}{' '.join(missing)}{RESET}")
     if in_venv:
         print(f"  {DIM}   (virtualenv 감지 → --user 플래그 생략){RESET}")
 
+    # ── 0단계: pip 자동 업그레이드 (구버전 pip가 패키지 못 찾는 경우 다수) ──
+    print(f"\n  {TEAL}⠋  pip 업그레이드 중...{RESET}")
     try:
-        result = subprocess.run(
-            pip_cmd,
-            capture_output=True,
-            text=True,
-            timeout=180,
+        subprocess.run(
+            base_cmd + ["--upgrade", "pip"],
+            capture_output=True, text=True, timeout=120,
         )
     except subprocess.TimeoutExpired:
-        print(f"  {RED}❌ 설치 시간 초과 (3분).{RESET}")
-        return False
+        pass  # 업그레이드 실패해도 계속 진행
 
-    if result.returncode != 0:
-        # PEP 668 (externally-managed) 에러면 --break-system-packages 로 재시도
-        err = result.stderr or ""
-        if "externally-managed-environment" in err:
-            print(f"  {YELLOW}⚠ PEP 668 감지 → --break-system-packages 로 재시도...{RESET}")
+    # ── 패키지를 한 개씩 설치 (부분 성공 허용) ──
+    installed = []
+    failed = []
+    for pkg in missing:
+        print(f"  {TEAL}⠋  설치 중... {pkg}{RESET}")
+        cmd = base_cmd + [pkg]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        except subprocess.TimeoutExpired:
+            print(f"  {RED}❌ {pkg} 시간 초과{RESET}")
+            failed.append(pkg)
+            continue
+
+        # PEP 668 fallback
+        if result.returncode != 0 and "externally-managed-environment" in (result.stderr or ""):
+            print(f"  {YELLOW}⚠ PEP 668 감지 → --break-system-packages 재시도{RESET}")
             try:
-                pip_cmd_retry = pip_cmd + ["--break-system-packages"]
-                result = subprocess.run(pip_cmd_retry, capture_output=True, text=True, timeout=180)
+                result = subprocess.run(cmd + ["--break-system-packages"], capture_output=True, text=True, timeout=180)
             except subprocess.TimeoutExpired:
-                print(f"  {RED}❌ 재시도 시간 초과.{RESET}")
-                return False
+                print(f"  {RED}❌ {pkg} 재시도 시간 초과{RESET}")
+                failed.append(pkg)
+                continue
 
-    if result.returncode != 0:
-        print(f"  {RED}❌ 설치 실패:{RESET}")
-        print(f"  {DIM}{result.stderr[:400]}{RESET}")
-        print(f"\n  {DIM}수동 설치 권장:{RESET}")
-        print(f"  {DIM}    pip install {' '.join(missing)}{RESET}")
-        print(f"  {DIM}  또는 가상환경 새로:{RESET}")
-        print(f"  {DIM}    python3 -m venv ~/.venvs/sukgo && source ~/.venvs/sukgo/bin/activate && pip install {' '.join(missing)}{RESET}")
-        return False
+        if result.returncode == 0:
+            print(f"  {GREEN}✅ {pkg}{RESET}")
+            installed.append(pkg)
+        else:
+            print(f"  {RED}❌ {pkg} 실패{RESET}")
+            err_tail = (result.stderr or result.stdout or "").strip().split("\n")[-3:]
+            for line in err_tail:
+                print(f"     {DIM}{line[:120]}{RESET}")
+            failed.append(pkg)
 
-    print(f"  {GREEN}✅ 설치 완료!{RESET}")
-    print(f"  {DIM}   다시 sukgo 를 실행하세요 (Python 모듈 재로드 필요).{RESET}")
-    print(f"  {DIM}   또는 그대로 진행하면 다음 호출부터 작동합니다.{RESET}")
-    return True
+    # ── 결과 안내 ──
+    if installed:
+        print(f"\n  {GREEN}✅ 설치 성공:{RESET} {', '.join(installed)}")
+
+    if failed:
+        print(f"\n  {YELLOW}⚠ 설치 실패:{RESET} {', '.join(failed)}")
+        print(f"  {DIM}수동 시도 (한 줄씩):{RESET}")
+        for pkg in failed:
+            print(f"  {DIM}    python3 -m pip install --upgrade pip && python3 -m pip install {pkg}{RESET}")
+        print(f"  {DIM}또는 새 venv:{RESET}")
+        print(f"  {DIM}    python3 -m venv ~/.venvs/sukgo && source ~/.venvs/sukgo/bin/activate && pip install {' '.join(failed)}{RESET}")
+
+    if "yfinance" in installed:
+        print(f"\n  {DIM}💡 yfinance만 있어도 해외 주식 분석은 정상 작동합니다.{RESET}")
+        if "FinanceDataReader" in failed:
+            print(f"  {DIM}   한국 주식(6자리 코드)은 일시적으로 제한.{RESET}")
+
+    return len(installed) > 0
 
 
 def investment_flow(config: dict, tool: Tool):
