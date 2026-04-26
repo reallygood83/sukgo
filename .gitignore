@@ -3,9 +3,13 @@
 # ═══════════════════════════════════════════════════════════
 secrets.json
 *secrets*.json
+# .env 종류 (실제 키 포함될 수 있음) 차단
+# .env.example 은 가이드용 — Git에 포함 OK
 .env
-.env.*
-!.env.example          # 사용자 가이드용 예시 — 추적 OK
+.env.local
+.env.production
+.env.development
+.envrc
 *.key
 *.api_key
 *.secret
