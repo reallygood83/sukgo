@@ -36,12 +36,35 @@ echo -e "      ${G}✅${N} Python $PY_VERSION"
 # ─── 2. 의존성 설치 ──────────────────────────────────────────
 echo
 echo -e "${B}[2/4]${N} 의존성 설치 (yfinance, FinanceDataReader, requests)..."
+
 if [[ -f "$SCRIPT_DIR/requirements.txt" ]]; then
-    if python3 -m pip install --user --quiet --upgrade -r "$SCRIPT_DIR/requirements.txt" 2>&1 | tail -5; then
+    # virtualenv 감지: VIRTUAL_ENV 또는 sys.prefix 변수
+    IN_VENV=$(python3 -c "import sys; print('1' if sys.prefix != getattr(sys, 'base_prefix', sys.prefix) else '0')")
+
+    PIP_FLAGS="--quiet --upgrade"
+    if [[ "$IN_VENV" == "0" ]]; then
+        PIP_FLAGS="$PIP_FLAGS --user"
+    fi
+
+    # 1차 시도
+    if python3 -m pip install $PIP_FLAGS -r "$SCRIPT_DIR/requirements.txt" 2>/tmp/sukgo_pip_err; then
         echo -e "      ${G}✅${N} 의존성 설치 완료"
     else
-        echo -e "      ${Y}⚠${N}  일부 패키지 설치 실패 — 데이터 페처 일부 비활성"
+        # PEP 668 (externally-managed) 폴백
+        if grep -q "externally-managed-environment" /tmp/sukgo_pip_err 2>/dev/null; then
+            echo -e "      ${Y}⚠${N}  PEP 668 감지 → --break-system-packages 로 재시도..."
+            if python3 -m pip install $PIP_FLAGS --break-system-packages -r "$SCRIPT_DIR/requirements.txt" 2>/dev/null; then
+                echo -e "      ${G}✅${N} 의존성 설치 완료 (--break-system-packages)"
+            else
+                echo -e "      ${Y}⚠${N}  설치 실패 — Investment 도구 사용 시 수동 설치 필요"
+                echo -e "      ${D}    pip install -r $SCRIPT_DIR/requirements.txt${N}"
+            fi
+        else
+            echo -e "      ${Y}⚠${N}  설치 실패 — 자세히:"
+            tail -3 /tmp/sukgo_pip_err 2>/dev/null
+        fi
     fi
+    rm -f /tmp/sukgo_pip_err
 else
     echo -e "      ${Y}⚠${N}  requirements.txt 없음 — 데이터 페처 비활성"
 fi

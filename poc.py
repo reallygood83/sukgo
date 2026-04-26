@@ -1326,10 +1326,22 @@ def ensure_data_fetchers() -> bool:
         print(f"\n  {DIM}수동 설치: pip install --user {' '.join(missing)}{RESET}")
         return False
 
-    print(f"\n  {TEAL}⠋  설치 중... pip install --user {' '.join(missing)}{RESET}")
+    # virtualenv 감지: venv 안에서는 --user 플래그 사용 불가
+    in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+
+    pip_cmd = [sys.executable, "-m", "pip", "install", "--quiet"]
+    if not in_venv:
+        pip_cmd.append("--user")
+    pip_cmd.extend(missing)
+
+    user_flag = "" if in_venv else "--user "
+    print(f"\n  {TEAL}⠋  설치 중... pip install {user_flag}{' '.join(missing)}{RESET}")
+    if in_venv:
+        print(f"  {DIM}   (virtualenv 감지 → --user 플래그 생략){RESET}")
+
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--user", "--quiet"] + missing,
+            pip_cmd,
             capture_output=True,
             text=True,
             timeout=180,
@@ -1339,9 +1351,24 @@ def ensure_data_fetchers() -> bool:
         return False
 
     if result.returncode != 0:
+        # PEP 668 (externally-managed) 에러면 --break-system-packages 로 재시도
+        err = result.stderr or ""
+        if "externally-managed-environment" in err:
+            print(f"  {YELLOW}⚠ PEP 668 감지 → --break-system-packages 로 재시도...{RESET}")
+            try:
+                pip_cmd_retry = pip_cmd + ["--break-system-packages"]
+                result = subprocess.run(pip_cmd_retry, capture_output=True, text=True, timeout=180)
+            except subprocess.TimeoutExpired:
+                print(f"  {RED}❌ 재시도 시간 초과.{RESET}")
+                return False
+
+    if result.returncode != 0:
         print(f"  {RED}❌ 설치 실패:{RESET}")
         print(f"  {DIM}{result.stderr[:400]}{RESET}")
-        print(f"\n  {DIM}수동 설치 시도: pip install --user {' '.join(missing)}{RESET}")
+        print(f"\n  {DIM}수동 설치 권장:{RESET}")
+        print(f"  {DIM}    pip install {' '.join(missing)}{RESET}")
+        print(f"  {DIM}  또는 가상환경 새로:{RESET}")
+        print(f"  {DIM}    python3 -m venv ~/.venvs/sukgo && source ~/.venvs/sukgo/bin/activate && pip install {' '.join(missing)}{RESET}")
         return False
 
     print(f"  {GREEN}✅ 설치 완료!{RESET}")
