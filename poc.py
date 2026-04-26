@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.9 PoC"
+VERSION = "0.0.10 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -894,6 +894,43 @@ DEBATE_FINAL_PROMPT = """## 의안
 # ═════════════════════════════════════════════════════════════════════
 # 백엔드
 # ═════════════════════════════════════════════════════════════════════
+def _run_cli(args: list, **kwargs) -> subprocess.CompletedProcess:
+    """크로스 플랫폼 subprocess 실행 헬퍼.
+
+    Windows 특수 처리:
+    - npm 글로벌 설치된 CLI 는 보통 `claude.cmd` / `codex.cmd` 형식이라
+      Python `subprocess` 가 CreateProcess 로 직접 실행 못 함 → cmd.exe 로 래핑
+    - 한국어 Windows 의 기본 파이프 인코딩이 cp949 라 한글 프롬프트가
+      깨질 수 있어 UTF-8 강제
+
+    macOS / Linux 는 영향 없음.
+    """
+    exe = args[0]
+
+    if sys.platform == "win32":
+        resolved = shutil.which(exe)
+        if not resolved:
+            raise FileNotFoundError(
+                f"'{exe}' 명령을 PATH 에서 찾을 수 없습니다. "
+                f"새 PowerShell 창을 열거나 'where {exe}' 로 설치 여부를 확인하세요."
+            )
+        if resolved.lower().endswith((".cmd", ".bat")):
+            # .cmd/.bat 은 CreateProcess 가 직접 실행 불가 → cmd /c 래핑
+            args = ["cmd.exe", "/c", resolved] + list(args[1:])
+        else:
+            args = [resolved] + list(args[1:])
+
+    # 텍스트 모드의 인코딩을 UTF-8 로 고정 (한국어 Windows 의 cp949 회피)
+    if kwargs.get("text") or kwargs.get("universal_newlines"):
+        kwargs.setdefault("encoding", "utf-8")
+        kwargs.setdefault("errors", "replace")
+
+    # stdin 미지정 시 DEVNULL — CLI 가 stdin 읽으려고 멈추는 사태 방지
+    kwargs.setdefault("stdin", subprocess.DEVNULL)
+
+    return subprocess.run(args, **kwargs)
+
+
 class Backend:
     name: str = ""
     description: str = ""
@@ -920,7 +957,7 @@ class ClaudeBackend(Backend):
         #   자동 로드되어 mcp__filesystem__write_file 같은 MCP 도구로
         #   파일을 저장하려고 시도하는 문제 방지.
         try:
-            r = subprocess.run(
+            r = _run_cli(
                 [
                     "claude", "-p", prompt,
                     "--output-format", "json",
@@ -928,13 +965,12 @@ class ClaudeBackend(Backend):
                     "--disallowed-tools", "mcp__*",
                 ],
                 capture_output=True, text=True, timeout=180,
-                stdin=subprocess.DEVNULL,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired) as e:
             print(f"  {RED}❌ claude 호출 실패: {e}{RESET}")
             return None
         if r.returncode != 0:
-            print(f"  {RED}❌ claude 오류:{RESET} {DIM}{r.stderr[:300]}{RESET}")
+            print(f"  {RED}❌ claude 오류:{RESET} {DIM}{(r.stderr or '')[:300]}{RESET}")
             return None
         try:
             return json.loads(r.stdout).get("result") or r.stdout
@@ -960,7 +996,7 @@ class CodexBackend(Backend):
             output_file = f.name
 
         try:
-            r = subprocess.run(
+            r = _run_cli(
                 [
                     "codex", "exec",
                     "--skip-git-repo-check",
@@ -970,7 +1006,6 @@ class CodexBackend(Backend):
                 capture_output=True,
                 text=True,
                 timeout=180,
-                stdin=subprocess.DEVNULL,
             )
             if r.returncode != 0:
                 err = (r.stderr or r.stdout or "")[:400]
@@ -978,7 +1013,7 @@ class CodexBackend(Backend):
                 return None
             with open(output_file, "r", encoding="utf-8") as f:
                 return f.read().strip()
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired) as e:
             print(f"  {RED}❌ codex 호출 실패: {e}{RESET}")
             return None
         finally:
@@ -996,16 +1031,15 @@ class GeminiBackend(Backend):
         return shutil.which("gemini") is not None
 
     def chat(self, prompt: str) -> Optional[str]:
-        # Gemini도 stdin 파이프를 입력으로 추가할 수 있어 DEVNULL 명시
+        # Gemini도 stdin 파이프를 입력으로 추가할 수 있어 _run_cli 가 DEVNULL 자동 적용
         try:
-            r = subprocess.run(
+            r = _run_cli(
                 ["gemini", "-p", prompt],
                 capture_output=True,
                 text=True,
                 timeout=180,
-                stdin=subprocess.DEVNULL,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        except (OSError, subprocess.TimeoutExpired) as e:
             print(f"  {RED}❌ gemini 호출 실패: {e}{RESET}")
             return None
         if r.returncode != 0:
