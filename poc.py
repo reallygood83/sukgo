@@ -735,10 +735,19 @@ class ClaudeBackend(Backend):
         return shutil.which("claude") is not None
 
     def chat(self, prompt: str) -> Optional[str]:
+        # ⚠ 중요: --tools "" 로 도구 사용 차단 (텍스트만 응답)
+        #   사용자 글로벌 ~/.claude/CLAUDE.md 의 명령 정의(예: /trading-ideas)가
+        #   자동 로드되어 Claude 가 파일 저장 같은 도구를 쓰려는 문제 방지.
+        #   sukgo 는 Claude 응답을 받아서 직접 저장하므로 도구 불필요.
         try:
             r = subprocess.run(
-                ["claude", "-p", prompt, "--output-format", "json"],
+                [
+                    "claude", "-p", prompt,
+                    "--output-format", "json",
+                    "--tools", "",  # 모든 빌트인 도구 차단
+                ],
                 capture_output=True, text=True, timeout=180,
+                stdin=subprocess.DEVNULL,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired) as e:
             print(f"  {RED}❌ claude 호출 실패: {e}{RESET}")
