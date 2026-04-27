@@ -58,7 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 
            ● claude · codex · gemini · MLX · Ollama
                   비교 모드 · 옵시디언 자동 저장
-                made by 배움의 달인 ✨   v0.0.11
+                made by 배움의 달인 ✨   v0.0.12
 ```
 
 ---
@@ -234,30 +234,52 @@ sukgo
 
 ### 💬 Clarifying Questions — 맞춤형 분석 (v0.0.11+)
 
-**Career · Investment · Education · Pre-mortem · Decision Matrix** 도구는 본 분석 전에 LLM 이 자동으로 핵심 질문 3~5개를 만들어 사용자에게 컨텍스트를 묻습니다.
+**Career · Investment · Education · Pre-mortem · Decision Matrix** 도구는 본 분석 전에 사용자가 컨텍스트 수집 방식을 선택합니다.
 
 ```
 > c   (Career)
 > 주제: 5년차 개발자, 스타트업 CTO 제안 받음. 이직할까?
 
-━━━ 1단계: 컨텍스트 수집 ━━━
-⠋ 핵심 질문 생성 중...
+🎯 Career  — 컨텍스트 수집 방식
+    1  ⚡ Quick   — sukgo 가 핵심 질문 3~5개 한 번에 (1~2분)
+    2  🎤 Deep    — codex omx deep-interview 인터랙티브 (5~10분, 정밀)
+    3  ⏭  Skip    — 즉시 분석 (컨텍스트 수집 X)
 
-📋 답변할 질문
-**Q1.** 현재 연봉/총보상과 스타트업이 제안한 연봉·지분 조건은?
-   _예시: 현재 1.2억 / 제안 9천만 + 지분 2%_
-**Q2.** 스타트업의 단계와 런웨이는? (투자 라운드, 직원 수, 남은 자금)
-**Q3.** 가족 상황과 재정적 안전마진은?
-**Q4.** CTO로서 기대되는 역할이 본인의 강점과 얼마나 맞나요?
-**Q5.** 이 결정에서 가장 두려운 것 1가지와 끌리는 것 1가지는?
-
-답변: [사용자가 자유롭게 답변 → 빈 줄 두 번 또는 '---' 입력]
-
-━━━ 2단계: 본 분석 ━━━
-[훨씬 더 구체적이고 맞춤형 5섹션 분석 출력]
+선택 [기본 1]:
 ```
 
-> 💡 답하기 어려운 질문은 `pass` 또는 빈칸. 전체 건너뛰려면 첫 줄에 `skip`. 일반 사고 도구(Steel-manning, 6 Hats 등)는 즉시 분석으로 진행.
+#### ⚡ Quick 모드 (기본)
+LLM 이 자동으로 핵심 질문 3~5개를 한 번에 만들어 사용자에게 묻고, 자유 답변(multi-line)을 받아 컨텍스트 보강.
+
+```
+📋 답변할 질문
+**Q1.** 현재 연봉/총보상과 스타트업이 제안한 연봉·지분 조건은?
+**Q2.** 스타트업의 단계와 런웨이는?
+**Q3.** 가족 상황과 재정적 안전마진은?
+... (총 3~5개)
+
+답변: [자유롭게 작성 → 빈 줄 두 번 또는 '---' 입력으로 종료]
+```
+
+#### 🎤 Deep 모드 — codex omx deep-interview 위임 (v0.0.12+)
+**`codex` CLI + omx `deep-interview` 스킬이 설치된 사용자**에게 자동 노출. 5~12라운드의 Socratic 인터랙티브 인터뷰로 ambiguity 점수가 임계치에 도달할 때까지 한 번에 한 질문씩 깊이 있게 파고듭니다.
+
+```
+🎤 잠시 후 codex 인터랙티브 세션이 시작됩니다.
+   • Socratic 질문에 한 라운드씩 답변
+   • 끝나면 codex 가 자동으로 spec 파일 생성 (.omx/specs/deep-interview-*.md)
+   • 종료: 'exit' 또는 Ctrl-D
+
+[codex 인터뷰 진행]
+
+✅ Deep Interview spec (3,247자) 회수 완료.
+   파일: ~/.sukgo/interviews/career-cto-이직-20260427-1830/.omx/specs/
+```
+
+작업 폴더는 `~/.sukgo/interviews/{slug}-{timestamp}/` 에 격리 생성되어 사용자 다른 작업과 충돌 X.
+
+> 💡 codex 미설치 시 Deep 옵션 자동 숨김. Deep 실패 시 Quick 으로 자동 폴백.
+> 일반 사고 도구(Steel-manning, 6 Hats 등)는 즉시 분석으로 진행.
 
 ---
 
@@ -495,8 +517,10 @@ sukgo wrapper가 `chcp 65001`로 UTF-8 코드페이지를 자동 설정하므로
 | v0.0.8 | ✅ 완료 | **Windows 풀 지원** (`get.ps1` · `install.ps1` · VT 모드 · UTF-8 코드페이지) |
 | v0.0.9 | ✅ 완료 | 한국어 Windows 설치 hotfix (UTF-8 BOM) |
 | v0.0.10 | ✅ 완료 | Windows CLI 호출 hotfix (.cmd 자동 cmd.exe 래핑 + UTF-8 파이프) |
-| v0.0.11 | ✅ 현재 | **Clarifying Questions** — Career·Investment·Education·Pre-mortem·Decision Matrix 가 본 분석 전 LLM 이 핵심 질문 생성 → 사용자 답변으로 컨텍스트 보강 |
-| v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 + 추가 백엔드 (Hermes/OpenClaude 등) |
+| v0.0.11 | ✅ 완료 | **Clarifying Questions Quick** — 5개 도구 본 분석 전 LLM 이 핵심 질문 생성 |
+| v0.0.12 | ✅ 현재 | **Deep Interview 모드** — codex omx `deep-interview` 위임 (Socratic 인터랙티브 인터뷰) |
+| v0.0.13 | 🚧 다음 | Deep Interview 네이티브 포팅 (codex 없이도 깊이 있는 인터뷰) |
+| v0.1 | 🚧 | `pipx install sukgo` + slash command 동기화 + 추가 백엔드 (Hermes/OpenClaude 등) |
 | v0.3 | 곧 | PyPI 정식 + DART API |
 | v0.5 | 중기 | 도메인 확장 (부동산·관계·건강) + 플러그인 시스템 |
 | v1.0 | 장기 | 영문 i18n + Homebrew tap + 커뮤니티 |

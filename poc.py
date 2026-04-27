@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.11 PoC"
+VERSION = "0.0.12 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -1665,13 +1665,42 @@ def read_multi_line(end_marker: str = "---") -> str:
     return "\n".join(lines).rstrip()
 
 
-def clarify_phase(tool: Tool, topic: str, questioner: "Backend") -> str:
-    """본 분석 전 LLM 이 핵심 질문을 만들고 사용자가 답하는 단계.
+def _is_codex_deep_interview_available() -> bool:
+    """codex CLI + omx deep-interview 스킬 동시 존재 여부."""
+    if not shutil.which("codex"):
+        return False
+    skill = Path.home() / ".codex" / "skills" / "deep-interview" / "SKILL.md"
+    return skill.exists()
 
-    Returns: 사용자 답변으로 풍부해진 새 topic 문자열.
-             질문 생성 실패 / 사용자가 skip 하면 원본 topic 그대로 반환.
-    """
-    print(f"\n  {BOLD}{TEAL}━━━ 1단계: 컨텍스트 수집 ━━━{RESET}")
+
+def _slugify(text: str, max_len: int = 40) -> str:
+    """topic 으로부터 폴더명용 슬러그 생성."""
+    s = re.sub(r"[^\w가-힣\-]+", "-", text.strip().lower())
+    s = re.sub(r"-+", "-", s).strip("-")
+    return s[:max_len] or "session"
+
+
+def _read_latest_spec(workdir: Path) -> Optional[str]:
+    """codex 인터뷰가 끝난 뒤 .omx/specs/deep-interview-*.md 중 최신 본문 반환."""
+    specs_dir = workdir / ".omx" / "specs"
+    if not specs_dir.exists():
+        return None
+    candidates = sorted(
+        specs_dir.glob("deep-interview-*.md"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    if not candidates:
+        return None
+    try:
+        return candidates[0].read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def _clarify_quick(tool: Tool, topic: str, questioner: "Backend") -> str:
+    """sukgo 자체 Quick 모드 — LLM 이 한 번에 3~5개 질문 생성."""
+    print(f"\n  {BOLD}{TEAL}━━━ 1단계: 컨텍스트 수집 (Quick) ━━━{RESET}")
     print(f"  {DIM}맞춤형 분석을 위해 {questioner.name} 가 핵심 질문을 만듭니다.{RESET}")
     print(f"  {TEAL}⠋  핵심 질문 생성 중... (10~30초){RESET}")
 
@@ -1707,6 +1736,122 @@ def clarify_phase(tool: Tool, topic: str, questioner: "Backend") -> str:
     )
     print(f"  {GREEN}✅ 컨텍스트 {len(answers)} 자 수집 완료. 본 분석으로 진행합니다.{RESET}")
     return enriched
+
+
+def _clarify_deep_via_codex(tool: Tool, topic: str) -> Optional[str]:
+    """codex omx deep-interview 위임 — Socratic 인터랙티브 인터뷰.
+
+    동작:
+        1. ~/.sukgo/interviews/{slug}-{ts}/ 작업 폴더 생성
+        2. cwd 를 그 폴더로 잡고 codex 인터랙티브 호출 ($deep-interview --standard <topic>)
+        3. 사용자가 인터뷰 끝내면 (exit / Ctrl-D) 제어권 sukgo 로 반환
+        4. 작업 폴더의 .omx/specs/deep-interview-*.md 최신 파일 읽어 컨텍스트로 사용
+
+    Returns:
+        풍부해진 topic 문자열, 또는 실패 시 None.
+    """
+    print(f"\n  {BOLD}{TEAL}━━━ 1단계: 컨텍스트 수집 (Deep — codex omx) ━━━{RESET}")
+
+    slug = _slugify(f"{tool.save_id}-{topic}")
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    workdir = Path.home() / ".sukgo" / "interviews" / f"{slug}-{ts}"
+    workdir.mkdir(parents=True, exist_ok=True)
+
+    # 사용자에게 흐름 안내
+    print(f"  {DIM}작업 폴더:{RESET} {workdir}")
+    print()
+    print(f"  {YELLOW}🎤 잠시 후 codex 인터랙티브 세션이 시작됩니다.{RESET}")
+    print(f"  {DIM}   • Socratic 질문에 한 라운드씩 답변하세요{RESET}")
+    print(f"  {DIM}   • 인터뷰가 끝나면 codex 가 자동으로 spec 파일을 생성합니다{RESET}")
+    print(f"  {DIM}   • 종료: 'exit' 입력 또는 Ctrl-D{RESET}")
+    print(f"  {DIM}   • 중단: Ctrl-C → sukgo 로 돌아옵니다{RESET}")
+    print()
+    input(f"  {BOLD}준비됐으면 Enter →{RESET} ")
+
+    initial_prompt = (
+        f"$deep-interview --standard "
+        f"{tool.name}({tool.short_desc}) 분석을 위한 컨텍스트 수집: {topic}"
+    )
+
+    try:
+        # capture_output 없이 → stdin/stdout/stderr 부모 TTY 상속 (인터랙티브 동작)
+        proc = subprocess.run(
+            ["codex", initial_prompt],
+            cwd=str(workdir),
+            check=False,
+        )
+    except KeyboardInterrupt:
+        print(f"\n  {YELLOW}⚠  Deep Interview 중단됨{RESET}")
+        return None
+    except OSError as e:
+        print(f"\n  {RED}❌ codex 실행 실패: {e}{RESET}")
+        return None
+
+    if proc.returncode != 0:
+        print(f"\n  {YELLOW}⚠  codex 가 비정상 종료 (rc={proc.returncode}){RESET}")
+
+    # spec 파일 회수
+    spec_text = _read_latest_spec(workdir)
+    if not spec_text:
+        print(f"\n  {YELLOW}⚠  생성된 spec 파일을 찾을 수 없습니다.{RESET}")
+        print(f"  {DIM}   ({workdir}/.omx/specs/ 비어 있음){RESET}")
+        return None
+
+    enriched = (
+        f"{topic}\n\n"
+        f"## Deep Interview Spec (omx deep-interview)\n\n"
+        f"{spec_text.strip()}"
+    )
+    print(f"  {GREEN}✅ Deep Interview spec ({len(spec_text)} 자) 회수 완료.{RESET}")
+    print(f"  {DIM}   파일: {workdir}/.omx/specs/{RESET}")
+    return enriched
+
+
+def _select_clarify_mode(tool: Tool) -> str:
+    """사용자가 컨텍스트 수집 방식을 선택. 'quick' / 'deep' / 'skip'.
+
+    codex+deep-interview 가 설치돼 있으면 Deep 옵션 표시. 없으면 자동 숨김.
+    """
+    deep_ok = _is_codex_deep_interview_available()
+
+    print(f"\n  {BOLD}🎯 {tool.name}{RESET}  {DIM}— 컨텍스트 수집 방식{RESET}\n")
+    print(f"    {PEACH}{BOLD}1{RESET}  ⚡ Quick   {DIM}— sukgo 가 핵심 질문 3~5개 한 번에 (1~2분){RESET}")
+    if deep_ok:
+        print(f"    {PEACH}{BOLD}2{RESET}  🎤 Deep    {DIM}— codex omx deep-interview 인터랙티브 (5~10분, 정밀){RESET}")
+    else:
+        print(f"    {DIM}    2  🎤 Deep — codex + omx deep-interview 미설치 (사용 불가){RESET}")
+    print(f"    {PEACH}{BOLD}3{RESET}  ⏭  Skip    {DIM}— 즉시 분석 (컨텍스트 수집 X){RESET}")
+    print()
+
+    raw = input(f"  {BOLD}선택 [기본 1]:{RESET} ").strip()
+    if not raw or raw == "1":
+        return "quick"
+    if raw == "2":
+        if deep_ok:
+            return "deep"
+        print(f"  {YELLOW}⚠  Deep 모드 사용 불가 → Quick 으로 진행{RESET}")
+        return "quick"
+    if raw == "3":
+        return "skip"
+    return "quick"
+
+
+def clarify_phase(tool: Tool, topic: str, questioner: "Backend") -> str:
+    """컨텍스트 수집 단계 — 사용자가 모드 선택 후 그에 맞춰 실행."""
+    mode = _select_clarify_mode(tool)
+
+    if mode == "skip":
+        return topic
+
+    if mode == "deep":
+        result = _clarify_deep_via_codex(tool, topic)
+        if result is not None:
+            return result
+        # Deep 실패 시 Quick 폴백
+        print(f"  {DIM}Quick 모드로 폴백합니다.{RESET}")
+        return _clarify_quick(tool, topic, questioner)
+
+    return _clarify_quick(tool, topic, questioner)
 
 
 def tool_flow(config: dict, tool: Tool):
