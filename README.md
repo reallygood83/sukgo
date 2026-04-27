@@ -58,7 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/reallygood83/sukgo/main/get.sh | ba
 
            ● claude · codex · gemini · MLX · Ollama
                   비교 모드 · 옵시디언 자동 저장
-                made by 배움의 달인 ✨   v0.0.13
+                made by 배움의 달인 ✨   v0.0.14
 ```
 
 ---
@@ -543,7 +543,8 @@ sukgo wrapper가 `chcp 65001`로 UTF-8 코드페이지를 자동 설정하므로
 | v0.0.10 | ✅ 완료 | Windows CLI 호출 hotfix (.cmd 자동 cmd.exe 래핑 + UTF-8 파이프) |
 | v0.0.11 | ✅ 완료 | **Clarifying Questions Quick** — 5개 도구 본 분석 전 LLM 이 핵심 질문 생성 |
 | v0.0.12 | ✅ 완료 | Deep Interview 위임 모드 — codex omx `deep-interview` |
-| v0.0.13 | ✅ 현재 | **Deep Interview 네이티브** — 5차원 ambiguity 점수 + mandatory gates + crystallize, codex 없이도 동작 |
+| v0.0.13 | ✅ 완료 | **Deep Interview 네이티브** — 5차원 ambiguity 점수 + mandatory gates + crystallize |
+| v0.0.14 | ✅ 현재 | **Obsidian 친화 저장** — YAML properties 확장 + 콜아웃(`> [!info]`/`> [!summary]`/`> [!example]-`) + 페르소나 헤더 + 접이식 spec 섹션 |
 | v0.1 | 🚧 다음 | `pipx install sukgo` + slash command 동기화 + 추가 백엔드 (Hermes/OpenClaude 등) |
 | v0.3 | 곧 | PyPI 정식 + DART API |
 | v0.5 | 중기 | 도메인 확장 (부동산·관계·건강) + 플러그인 시스템 |

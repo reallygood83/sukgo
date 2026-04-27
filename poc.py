@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.13 PoC"
+VERSION = "0.0.14 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -1454,6 +1454,47 @@ def migrate_config(config: dict) -> dict:
 # ═════════════════════════════════════════════════════════════════════
 # 세션 저장
 # ═════════════════════════════════════════════════════════════════════
+def _yaml_str(s: str) -> str:
+    """YAML safe single-quoted string (모든 한글·따옴표·특수문자 안전)."""
+    if s is None:
+        return "''"
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def _yaml_list(items: list, indent: int = 2) -> str:
+    """YAML 블록 형식 리스트 — 빈 리스트는 '[]'."""
+    if not items:
+        return "[]"
+    pad = " " * indent
+    return "\n" + "\n".join(f"{pad}- {_yaml_str(it)}" for it in items)
+
+
+def _split_clarify_section(topic: str) -> tuple:
+    """clarify 단계가 추가한 컨텍스트를 원본 topic 과 분리.
+
+    Returns:
+        (original_topic, clarify_block_or_None, clarify_meta_dict)
+    """
+    markers = [
+        ("## Deep Interview Spec (sukgo native",  "deep-native"),
+        ("## Deep Interview Spec (omx deep-interview", "deep-codex"),
+        ("## Deep Interview Spec",                  "deep-codex"),
+        ("## 사용자가 제공한 추가 컨텍스트",         "quick"),
+    ]
+    for marker, mode_id in markers:
+        idx = topic.find(marker)
+        if idx >= 0:
+            original = topic[:idx].rstrip()
+            clarify_block = topic[idx:].strip()
+            meta = {"mode": mode_id}
+            # rounds 추출 — "sukgo native — N rounds" 패턴
+            m = re.search(r"sukgo native\s*[—\-]\s*(\d+)\s*rounds", clarify_block)
+            if m:
+                meta["rounds"] = int(m.group(1))
+            return original, clarify_block, meta
+    return topic, None, {}
+
+
 def save_session(
     save_dir: Path,
     tool: str,
@@ -1461,81 +1502,170 @@ def save_session(
     responses: dict,  # {backend_name: response_text} or with __synthesis__/__debate_final__
     mode: str = "compare",  # single / compare / synthesis / debate
 ) -> Path:
-    """
-    세션을 옵시디언 친화 마크다운으로 저장 (모드별 다른 구조)
+    """세션을 Obsidian Flavored Markdown 으로 저장.
+
+    - YAML properties (title / aliases / tags / cssclasses / clarify 메타)
+    - 결정 요약 콜아웃 (`> [!info]+`)
+    - Deep Interview spec 접이식 콜아웃 (있을 때만)
+    - 모드별 시각 hierarchy (synthesis / debate / compare / single)
+    - sukgo 푸터 콜아웃 (`> [!quote]`)
     """
     now = datetime.now()
-    safe_topic = re.sub(r"[^\w가-힣\-]+", "_", topic)[:50].strip("_")
+
+    # ── topic 에서 clarify 섹션 분리 ──
+    original_topic, clarify_block, clarify_meta = _split_clarify_section(topic)
+
+    # 짧은 alias 용 — 50자 컷
+    short_topic = original_topic.strip().split("\n")[0][:80]
+    safe_topic = re.sub(r"[^\w가-힣\-]+", "_", short_topic)[:50].strip("_")
 
     # 특수 키 분리
     synthesis = responses.pop("__synthesis__", None)
     debate_final = responses.pop("__debate_final__", None)
-
     backend_names = list(responses.keys())
+
+    # ── 파일명 ──
     suffix_map = {
-        "single": backend_names[0] if backend_names else "single",
-        "compare": "compare",
+        "single":    backend_names[0] if backend_names else "single",
+        "compare":   "compare",
         "synthesis": "synthesis",
-        "debate": "debate",
+        "debate":    "debate",
     }
     suffix = suffix_map.get(mode, mode)
     filename = f"{now:%Y-%m-%d_%H%M}_{tool}_{suffix}_{safe_topic}.md"
     filepath = save_dir / filename
 
-    backends_yaml = "[" + ", ".join(backend_names) + "]"
+    # ── 도구 메타 ──
+    tool_obj = get_tool_by_save_id(tool)
+    tool_emoji = tool_obj.emoji if tool_obj else "🧠"
+    tool_label = tool_obj.name if tool_obj else tool
 
-    body = f"""---
-tool: {tool}
-topic: "{topic}"
-backends: {backends_yaml}
-mode: {mode}
-created: {now.isoformat()}
-tags:
-  - sukgo
-  - {tool}
-  - {mode}
-  - decision-thinking
----
+    # ── 모드 라벨 ──
+    mode_meta = {
+        "single":    ("🤖", "단일",    "단일 AI 분석"),
+        "compare":   ("📊", "비교",    f"{len(backend_names)}개 AI 비교"),
+        "synthesis": ("🎯", "종합",    f"{len(backend_names)}개 AI 비교 + 종합"),
+        "debate":    ("🏛", "원탁토론", f"{len(backend_names)}개 페르소나 토론"),
+    }
+    mode_emoji, _, mode_desc = mode_meta.get(mode, ("🤖", mode, mode))
 
-# {tool}: {topic}
+    # ── 제목 ──
+    note_title = f"{tool_emoji} {tool_label} — {short_topic}"
 
-"""
+    # ── tags / aliases ──
+    tags = ["sukgo", f"sukgo/{tool}", f"sukgo/{mode}", "decision-thinking"]
+    if clarify_meta.get("mode"):
+        tags.append(f"sukgo/clarify-{clarify_meta['mode']}")
+    aliases = [short_topic] if short_topic else []
 
-    # 모드별 본문 구조
+    # ── YAML frontmatter ──
+    fm_lines = [
+        "---",
+        f"title: {_yaml_str(note_title)}",
+        f"tool: {_yaml_str(tool)}",
+        f"emoji: {_yaml_str(tool_emoji)}",
+        f"mode: {_yaml_str(mode)}",
+        f"topic: {_yaml_str(original_topic.strip().replace(chr(10), ' / '))}",
+        f"backends:{_yaml_list(backend_names)}",
+        f"created: {now.isoformat(timespec='seconds')}",
+        f"date: {now:%Y-%m-%d}",
+        f"session_id: {_yaml_str(now.strftime('%Y%m%d-%H%M%S'))}",
+    ]
+    if clarify_meta.get("mode"):
+        fm_lines.append(f"clarify_mode: {_yaml_str(clarify_meta['mode'])}")
+        if "rounds" in clarify_meta:
+            fm_lines.append(f"clarify_rounds: {clarify_meta['rounds']}")
+    fm_lines += [
+        f"tags:{_yaml_list(tags)}",
+        f"aliases:{_yaml_list(aliases)}",
+        f"cssclasses:{_yaml_list(['sukgo', f'sukgo-{tool}'])}",
+        "---",
+        "",
+    ]
+
+    body = "\n".join(fm_lines)
+    body += f"\n# {note_title}\n\n"
+
+    # ── 결정 요약 콜아웃 ──
+    first_topic_line = original_topic.strip().splitlines()[0] if original_topic.strip() else "(없음)"
+    summary_lines = [
+        "> [!info]+ 결정 요약",
+        f"> **🎯 주제**  ::  {first_topic_line}",
+        f"> **{tool_emoji} 도구**  ::  {tool_label}",
+        f"> **{mode_emoji} 모드**  ::  {mode_desc}",
+        f"> **🤖 AI**  ::  {' · '.join(backend_names) if backend_names else '없음'}",
+    ]
+    if clarify_meta.get("mode"):
+        clarify_label = {
+            "quick":       "⚡ Quick (LLM 일괄 질문)",
+            "deep-native": f"🧠 Deep Native ({clarify_meta.get('rounds', '?')} 라운드)",
+            "deep-codex":  "🎤 Deep (codex omx 위임)",
+        }.get(clarify_meta["mode"], clarify_meta["mode"])
+        summary_lines.append(f"> **💬 컨텍스트**  ::  {clarify_label}")
+    summary_lines.append(f"> **🕐 생성**  ::  {now:%Y-%m-%d %H:%M}")
+    body += "\n".join(summary_lines) + "\n\n"
+
+    # ── Deep Interview spec 접이식 콜아웃 ──
+    if clarify_block:
+        # 콜아웃 안에 들어가려면 모든 줄 앞에 '> ' 필요
+        spec_quoted = "\n".join(f"> {ln}" if ln else ">" for ln in clarify_block.splitlines())
+        body += "> [!example]- 컨텍스트 수집 상세 (펼치려면 클릭)\n"
+        body += spec_quoted + "\n\n"
+
+    body += "---\n\n"
+
+    # ── 모드별 본문 ──
     if mode == "debate" and debate_final:
-        body += "> 🏛 **원탁 토론** — 여러 페르소나가 2 라운드 토론한 결과.\n\n"
-        body += "## 🎯 최종 합의 및 권고\n\n" + debate_final + "\n\n"
-        body += "---\n\n# 📝 토론 전체 기록\n\n"
+        body += "## 🎯 최종 합의 및 권고\n\n"
+        body += "> [!success]+ 합의된 결론\n"
+        body += "\n".join(f"> {ln}" if ln else ">" for ln in debate_final.splitlines())
+        body += "\n\n---\n\n## 🏛 토론 전체 기록\n\n"
         for backend_name, full_text in responses.items():
-            emoji, persona_name, _ = get_persona(backend_name)
-            body += f"\n---\n\n## {emoji} {persona_name} ({backend_name})\n\n{full_text}\n"
+            emoji, persona_name, persona_desc = get_persona(backend_name)
+            body += f"### {emoji} {persona_name}  *— {persona_desc}*\n"
+            body += f"`{backend_name}`\n\n"
+            body += full_text + "\n\n"
 
     elif mode == "synthesis" and synthesis:
-        body += f"> 🎯 **종합 모드** — {len(backend_names)}개 AI 비교 + 종합 권고.\n\n"
-        body += "## 🎯 종합 권고\n\n" + synthesis + "\n\n"
-        body += "---\n\n# 📝 각 AI 분석\n\n"
+        body += "## 🎯 종합 권고\n\n"
+        body += "> [!summary]+ 종합 권고\n"
+        body += "\n".join(f"> {ln}" if ln else ">" for ln in synthesis.splitlines())
+        body += "\n\n---\n\n## 📊 각 AI 의 분석\n\n"
         for backend_name, response in responses.items():
-            body += f"\n---\n\n## 🤖 {backend_name}\n\n{response}\n"
+            emoji, persona_name, _ = get_persona(backend_name)
+            body += f"### {emoji} {persona_name}  ·  `{backend_name}`\n\n"
+            body += response + "\n\n"
 
     elif mode == "compare" or len(backend_names) > 1:
-        body += f"> 📊 **비교 모드** — {len(backend_names)}개 AI 관점.\n\n"
+        body += "## 📊 AI 비교 분석\n\n"
         for backend_name, response in responses.items():
-            body += f"\n---\n\n## 🤖 {backend_name}\n\n{response}\n"
+            emoji, persona_name, _ = get_persona(backend_name)
+            body += f"### {emoji} {persona_name}  ·  `{backend_name}`\n\n"
+            body += response + "\n\n"
 
     else:  # single
         if backend_names:
-            body += responses[backend_names[0]]
+            body += "## 🤖 분석\n\n"
+            body += responses[backend_names[0]] + "\n\n"
 
-    body += f"""
-
----
-
-> Generated by **sukgo** · made by 배움의 달인 ✨
-> Mode: `{mode}` · Backend: `{', '.join(backend_names)}` · {now:%Y-%m-%d %H:%M}
-"""
+    # ── 푸터 콜아웃 ──
+    body += "---\n\n"
+    body += "> [!quote]- sukgo 메타데이터\n"
+    body += f"> Generated by **sukgo v{VERSION}** · made by 배움의 달인 ✨\n"
+    body += f"> Mode `{mode}` · Backends `{', '.join(backend_names) or '-'}` · {now:%Y-%m-%d %H:%M}\n"
+    body += f"> Session ID `{now:%Y%m%d-%H%M%S}`\n"
+    body += "> [`sukgo update`](#) 로 최신 버전 받기\n"
 
     filepath.write_text(body, encoding="utf-8")
     return filepath
+
+
+def get_tool_by_save_id(save_id: str):
+    """save_id 로 Tool 객체 찾기 (없으면 None)."""
+    for t in TOOLS:
+        if t.save_id == save_id:
+            return t
+    return None
 
 
 # ═════════════════════════════════════════════════════════════════════
