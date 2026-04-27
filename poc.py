@@ -23,7 +23,7 @@ from typing import Optional
 # ═════════════════════════════════════════════════════════════════════
 # 상수
 # ═════════════════════════════════════════════════════════════════════
-VERSION = "0.0.12 PoC"
+VERSION = "0.0.13 PoC"
 CONFIG_PATH = Path.home() / ".config" / "sukgo" / "config.json"
 
 # OS별 기본 저장 위치 (Windows 사용자도 자연스럽게)
@@ -932,6 +932,146 @@ CLARIFY_PROMPT = """당신은 시니어 컨설턴트입니다. **{tool_name}** (
 
 
 # ═════════════════════════════════════════════════════════════════════
+# Deep Interview (네이티브 포팅) — omx deep-interview 알고리즘
+# ═════════════════════════════════════════════════════════════════════
+# 출처: ~/.codex/skills/deep-interview/SKILL.md (omx 프레임워크)
+# 핵심 차이: sukgo 는 의사결정 도메인 전용이라 brownfield/greenfield 구분
+#           제거 + 5차원 (intent/outcome/scope/constraints/success) 만 사용
+
+DEEP_INTERVIEW_PROFILES = {
+    "quick":    {"threshold": 0.30, "max_rounds": 5,  "label": "Quick (5라운드)"},
+    "standard": {"threshold": 0.20, "max_rounds": 12, "label": "Standard (최대 12라운드, 권장)"},
+    "deep":     {"threshold": 0.15, "max_rounds": 20, "label": "Deep (최대 20라운드, 정밀)"},
+}
+
+# 가중치: intent×0.30 + outcome×0.25 + scope×0.20 + constraints×0.15 + success×0.10
+DIM_WEIGHTS = {
+    "intent": 0.30,
+    "outcome": 0.25,
+    "scope": 0.20,
+    "constraints": 0.15,
+    "success": 0.10,
+}
+
+DEEP_INTERVIEW_SYSTEM = """당신은 Socratic 의사결정 컨설턴트입니다. **{tool_name}**({tool_desc}) 분석을 위해 사용자의 vague 한 결정을 명확한 spec 으로 발전시키는 인터뷰를 진행합니다.
+
+# 인터뷰 규칙
+
+1. **한 라운드에 한 질문만** (절대 배치 금지)
+2. **Stage 우선순위**:
+   - Stage 1 (Intent-first): intent → outcome → scope → non-goals → decision boundaries
+   - Stage 2 (Feasibility): constraints → success criteria
+3. **약한 차원을 타겟**: scores 가 가장 낮은 차원에 대해 다음 질문 만들기
+4. **Pressure pass**: 사용자 답변이 vague/추상적이면 같은 dimension 에서 더 깊은 follow-up
+   (evidence 요구 / hidden assumption 노출 / boundary·tradeoff 강제 / root cause vs symptom)
+5. **Mandatory gates**: Non-goals 와 Decision Boundaries 가 명시적이지 않으면 ambiguity 임계치 달성해도 계속
+
+# 차원 (각 0.0~1.0, 1.0 = 완벽히 명확)
+- intent: 왜 이 결정을 원하는가
+- outcome: 무엇이 끝 상태인가
+- scope: 어디까지 가는가 (범위)
+- constraints: 어떤 제약이 있는가 (시간·돈·가족·정책)
+- success: 어떻게 성공을 판단하는가 (검증 신호)
+
+ambiguity = 1 - (intent×0.30 + outcome×0.25 + scope×0.20 + constraints×0.15 + success×0.10)
+
+# Challenge Modes (필요 시 활성화)
+- contrarian (round 2+): 핵심 가정에 의문 제기 ("정말 그렇습니까?")
+- simplifier (round 4+): 최소 viable scope 묻기 ("이걸 빼면 어떻게 되나요?")
+- ontologist (round 5+): essence-level 재구성 ("진짜 결정해야 할 건 무엇인가요?")
+
+# 입력
+
+**도구**: {tool_name} — {tool_desc}
+**초기 주제**: {initial_topic}
+**현재 라운드**: {round_num} / {max_rounds}
+**임계치**: ambiguity ≤ {threshold}
+
+**지금까지 인터뷰**:
+{history}
+
+# 응답 형식
+
+반드시 아래 JSON 만 출력 (다른 텍스트·인사·설명 금지):
+
+```json
+{{
+  "next_question": "사용자에게 던질 한 개의 명확한 질문 (구체적 예시 포함하면 좋음)",
+  "target_dimension": "intent|outcome|scope|constraints|success",
+  "challenge_mode": "none|contrarian|simplifier|ontologist",
+  "scores": {{
+    "intent": 0.0,
+    "outcome": 0.0,
+    "scope": 0.0,
+    "constraints": 0.0,
+    "success": 0.0
+  }},
+  "ambiguity": 0.0,
+  "non_goals_explicit": false,
+  "decision_boundaries_explicit": false,
+  "pressure_pass_done": false,
+  "ready_to_crystallize": false,
+  "reasoning": "이 질문을 던지는 한 줄 이유"
+}}
+```
+
+`ready_to_crystallize` 는 ambiguity ≤ {threshold} **AND** non_goals_explicit=true **AND** decision_boundaries_explicit=true **AND** pressure_pass_done=true 일 때만 true.
+
+JSON 외 텍스트 절대 출력 금지.
+"""
+
+DEEP_INTERVIEW_CRYSTALLIZE = """이전 단계에서 수집한 인터뷰 내용을 바탕으로 **{tool_name}** 분석을 위한 명확한 spec 을 작성하세요.
+
+**초기 주제**: {initial_topic}
+
+**인터뷰 라운드 ({n_rounds}회)**:
+{transcript}
+
+**최종 점수**:
+- intent: {final_scores[intent]:.2f}
+- outcome: {final_scores[outcome]:.2f}
+- scope: {final_scores[scope]:.2f}
+- constraints: {final_scores[constraints]:.2f}
+- success: {final_scores[success]:.2f}
+- ambiguity: {final_ambiguity:.2f}
+
+다음 마크다운 구조로 spec 출력 (이게 다음 단계 분석에 그대로 입력됨):
+
+# Deep Interview Spec
+
+## Intent — 왜 이 결정을 원하는가
+{{사용자 답변에서 추출한 핵심 동기}}
+
+## Desired Outcome — 무엇이 끝 상태인가
+{{구체적 목표 상태}}
+
+## In-Scope
+- {{이 결정이 다루는 범위}}
+
+## Out-of-Scope / Non-goals
+- {{명시적으로 제외할 것}}
+
+## Decision Boundaries
+- {{사용자가 자율적으로 결정할 영역 vs 추가 확인이 필요한 영역}}
+
+## Constraints
+- {{제약 조건}}
+
+## Acceptance Criteria
+- {{성공 판단 신호}}
+
+## Assumptions Exposed
+- {{인터뷰에서 드러난 숨은 가정}}
+
+## Pressure-Pass Findings
+- {{어떤 답변이 더 깊은 follow-up 으로 정교해졌는지}}
+
+## Full Transcript
+{{모든 라운드 Q/A 요약}}
+"""
+
+
+# ═════════════════════════════════════════════════════════════════════
 # 백엔드
 # ═════════════════════════════════════════════════════════════════════
 def _run_cli(args: list, **kwargs) -> subprocess.CompletedProcess:
@@ -1807,49 +1947,260 @@ def _clarify_deep_via_codex(tool: Tool, topic: str) -> Optional[str]:
     return enriched
 
 
-def _select_clarify_mode(tool: Tool) -> str:
-    """사용자가 컨텍스트 수집 방식을 선택. 'quick' / 'deep' / 'skip'.
+def _extract_json(text: str) -> Optional[dict]:
+    """LLM 출력에서 첫 번째 JSON 객체 추출. 코드펜스·서두 텍스트 허용.
 
-    codex+deep-interview 가 설치돼 있으면 Deep 옵션 표시. 없으면 자동 숨김.
+    1) 전체 텍스트 직접 파싱 시도
+    2) ```json ... ``` 펜스 안쪽 추출 시도
+    3) 첫 번째 balanced { ... } 블록 추출 시도
     """
-    deep_ok = _is_codex_deep_interview_available()
+    s = text.strip()
+
+    try:
+        return json.loads(s)
+    except json.JSONDecodeError:
+        pass
+
+    # 코드 펜스 (```json ... ``` 또는 ``` ... ```)
+    fence = re.search(r"```(?:json)?\s*\n(.*?)\n```", s, re.DOTALL)
+    if fence:
+        try:
+            return json.loads(fence.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # balanced { ... } 추출 (depth tracking)
+    depth = 0
+    start = -1
+    for i, c in enumerate(s):
+        if c == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                try:
+                    return json.loads(s[start:i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
+
+
+def _format_round_history(rounds: list) -> str:
+    """LLM 에 보낼 인터뷰 히스토리 포맷팅."""
+    if not rounds:
+        return "(아직 라운드 없음 — 첫 질문을 만드세요)"
+    parts = []
+    for i, r in enumerate(rounds, 1):
+        amb = r.get("ambiguity", 1.0)
+        parts.append(
+            f"[Round {i}] (ambiguity={amb:.2f}, target={r.get('target_dimension', '?')})\n"
+            f"Q: {r['question']}\n"
+            f"A: {r['answer']}"
+        )
+    return "\n\n".join(parts)
+
+
+def _format_round_transcript(rounds: list) -> str:
+    """crystallize 단계용 — 모든 라운드를 간결 형식으로."""
+    parts = []
+    for i, r in enumerate(rounds, 1):
+        parts.append(f"[Round {i}] Q: {r['question']}\n             A: {r['answer']}")
+    return "\n".join(parts)
+
+
+def _clarify_deep_native(tool: Tool, topic: str, interviewer: "Backend",
+                         profile_key: str = "standard") -> Optional[str]:
+    """codex 없이 sukgo 안에서 deep-interview 알고리즘 직접 실행.
+
+    LLM 한 번 호출 = 한 라운드. 매 라운드마다 LLM 이 다음 질문 + 차원 점수
+    + ambiguity 평가 + gates 상태를 JSON 으로 반환.
+    """
+    profile = DEEP_INTERVIEW_PROFILES[profile_key]
+    threshold = profile["threshold"]
+    max_rounds = profile["max_rounds"]
+
+    print(f"\n  {BOLD}{TEAL}━━━ Deep Interview (Native, {profile['label']}) ━━━{RESET}")
+    print(f"  {DIM}임계치 ambiguity ≤ {threshold} 도달 또는 사용자가 'done' 입력 시 종료{RESET}")
+    print(f"  {DIM}인터뷰어 백엔드: {interviewer.name}{RESET}")
+    print(f"  {DIM}한 번에 한 질문씩 — 한 줄로 답하시면 됩니다 ('done'/'enough' 로 조기 종료){RESET}\n")
+
+    rounds = []
+    last_data = None
+
+    for round_num in range(1, max_rounds + 1):
+        prompt = DEEP_INTERVIEW_SYSTEM.format(
+            tool_name=tool.name,
+            tool_desc=tool.short_desc,
+            initial_topic=topic,
+            history=_format_round_history(rounds),
+            round_num=round_num,
+            max_rounds=max_rounds,
+            threshold=threshold,
+        )
+
+        print(f"  {TEAL}⠋  Round {round_num}/{max_rounds} — 다음 질문 생성 중...{RESET}")
+        response = interviewer.chat(prompt)
+        if not response:
+            print(f"  {YELLOW}⚠  인터뷰어 응답 실패 — 인터뷰 종료{RESET}")
+            break
+
+        data = _extract_json(response) or {}
+        question = (data.get("next_question") or response.strip()).strip()
+        if not question:
+            print(f"  {YELLOW}⚠  질문 추출 실패 — 인터뷰 종료{RESET}")
+            break
+
+        # 진행 상태 표시
+        ambiguity = float(data.get("ambiguity", 1.0))
+        target = data.get("target_dimension", "?")
+        challenge = data.get("challenge_mode", "none")
+        gates = []
+        if data.get("non_goals_explicit"):
+            gates.append(f"{GREEN}NG✓{RESET}")
+        if data.get("decision_boundaries_explicit"):
+            gates.append(f"{GREEN}DB✓{RESET}")
+        if data.get("pressure_pass_done"):
+            gates.append(f"{GREEN}PP✓{RESET}")
+        gates_str = " ".join(gates) if gates else f"{DIM}gates 미충족{RESET}"
+
+        bar_filled = int((1 - ambiguity) * 20)
+        bar = "█" * bar_filled + "░" * (20 - bar_filled)
+        challenge_label = "" if challenge == "none" else f" {YELLOW}[{challenge}]{RESET}"
+
+        print(f"\n  {BOLD}── Round {round_num}/{max_rounds} ──{RESET}{challenge_label}")
+        print(f"  {DIM}clarity:{RESET} [{bar}] {(1 - ambiguity) * 100:.0f}%  "
+              f"{DIM}target:{RESET} {target}  {gates_str}")
+        print(f"\n  {BOLD}❓ {question}{RESET}\n")
+
+        try:
+            answer = input(f"  {BOLD}>{RESET} ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n  {YELLOW}⚠  인터뷰 중단됨{RESET}")
+            break
+
+        if answer.lower() in ("done", "enough", "exit", "quit"):
+            print(f"  {DIM}사용자가 인터뷰 종료. 지금까지 답변으로 spec 작성합니다.{RESET}")
+            break
+
+        rounds.append({
+            "question": question,
+            "answer": answer or "(답변 없음)",
+            "scores": data.get("scores", {}),
+            "ambiguity": ambiguity,
+            "target_dimension": target,
+            "challenge_mode": challenge,
+        })
+        last_data = data
+
+        # 임계치 + gates 모두 통과하면 조기 종료
+        if (data.get("ready_to_crystallize")
+                or (ambiguity <= threshold
+                    and data.get("non_goals_explicit")
+                    and data.get("decision_boundaries_explicit")
+                    and data.get("pressure_pass_done"))):
+            print(f"\n  {GREEN}✅ 임계치·gates 모두 충족 — 인터뷰 종료{RESET}")
+            break
+
+    if not rounds:
+        return None
+
+    # ── Crystallize: 모은 답변을 spec 으로 ──
+    print(f"\n  {TEAL}⠋  Spec 정리 중... ({len(rounds)} 라운드 종합){RESET}")
+
+    final_scores = (last_data or {}).get("scores", {}) if last_data else {}
+    final_scores = {dim: float(final_scores.get(dim, 0.0)) for dim in DIM_WEIGHTS}
+    final_ambiguity = (last_data or {}).get("ambiguity", 1.0) if last_data else 1.0
+
+    spec_prompt = DEEP_INTERVIEW_CRYSTALLIZE.format(
+        tool_name=tool.name,
+        initial_topic=topic,
+        n_rounds=len(rounds),
+        transcript=_format_round_transcript(rounds),
+        final_scores=final_scores,
+        final_ambiguity=final_ambiguity,
+    )
+    spec = interviewer.chat(spec_prompt)
+
+    if not spec or len(spec.strip()) < 100:
+        # 최종 LLM 호출 실패 → 원본 라운드를 그대로 컨텍스트로
+        print(f"  {YELLOW}⚠  Spec 생성 실패 — 원시 인터뷰 내용 그대로 전달{RESET}")
+        spec = (
+            f"## Raw Interview ({len(rounds)} rounds, "
+            f"final ambiguity {final_ambiguity:.2f})\n\n"
+            f"{_format_round_transcript(rounds)}"
+        )
+    else:
+        print(f"  {GREEN}✅ Spec 생성 완료 ({len(spec)} 자){RESET}")
+
+    enriched = (
+        f"{topic}\n\n"
+        f"## Deep Interview Spec (sukgo native — {len(rounds)} rounds)\n\n"
+        f"{spec.strip()}"
+    )
+    return enriched
+
+
+def _select_clarify_mode(tool: Tool) -> tuple:
+    """사용자가 컨텍스트 수집 방식 선택.
+
+    Returns:
+        (mode, profile_or_engine) 튜플:
+        ('quick', None)
+        ('deep', 'codex')   — codex omx deep-interview 위임
+        ('deep', 'native')  — sukgo 자체 구현
+        ('skip', None)
+    """
+    codex_ok = _is_codex_deep_interview_available()
 
     print(f"\n  {BOLD}🎯 {tool.name}{RESET}  {DIM}— 컨텍스트 수집 방식{RESET}\n")
-    print(f"    {PEACH}{BOLD}1{RESET}  ⚡ Quick   {DIM}— sukgo 가 핵심 질문 3~5개 한 번에 (1~2분){RESET}")
-    if deep_ok:
-        print(f"    {PEACH}{BOLD}2{RESET}  🎤 Deep    {DIM}— codex omx deep-interview 인터랙티브 (5~10분, 정밀){RESET}")
+    print(f"    {PEACH}{BOLD}1{RESET}  ⚡ Quick   {DIM}— 핵심 질문 3~5개 한 번에 (1~2분){RESET}")
+    print(f"    {PEACH}{BOLD}2{RESET}  🎤 Deep    {DIM}— Socratic 인터뷰 (5~12라운드, 5~10분, 정밀){RESET}")
+    if codex_ok:
+        print(f"        {DIM}└ codex omx 감지됨 → 권장 엔진으로 선택 가능{RESET}")
     else:
-        print(f"    {DIM}    2  🎤 Deep — codex + omx deep-interview 미설치 (사용 불가){RESET}")
-    print(f"    {PEACH}{BOLD}3{RESET}  ⏭  Skip    {DIM}— 즉시 분석 (컨텍스트 수집 X){RESET}")
+        print(f"        {DIM}└ sukgo 네이티브 (codex 불필요){RESET}")
+    print(f"    {PEACH}{BOLD}3{RESET}  ⏭  Skip    {DIM}— 즉시 분석{RESET}")
     print()
 
     raw = input(f"  {BOLD}선택 [기본 1]:{RESET} ").strip()
+
     if not raw or raw == "1":
-        return "quick"
-    if raw == "2":
-        if deep_ok:
-            return "deep"
-        print(f"  {YELLOW}⚠  Deep 모드 사용 불가 → Quick 으로 진행{RESET}")
-        return "quick"
+        return ("quick", None)
     if raw == "3":
-        return "skip"
-    return "quick"
+        return ("skip", None)
+    if raw == "2":
+        if codex_ok:
+            print(f"\n  {DIM}Deep 엔진 선택:{RESET}")
+            print(f"    {PEACH}a{RESET}  codex omx deep-interview {DIM}(권장 — 검증된 구현){RESET}")
+            print(f"    {PEACH}b{RESET}  sukgo native            {DIM}(LLM 한 호출 = 한 라운드){RESET}")
+            engine = input(f"  {BOLD}엔진 [기본 a]:{RESET} ").strip().lower()
+            return ("deep", "native" if engine == "b" else "codex")
+        return ("deep", "native")
+
+    return ("quick", None)
 
 
 def clarify_phase(tool: Tool, topic: str, questioner: "Backend") -> str:
     """컨텍스트 수집 단계 — 사용자가 모드 선택 후 그에 맞춰 실행."""
-    mode = _select_clarify_mode(tool)
+    mode, engine = _select_clarify_mode(tool)
 
     if mode == "skip":
         return topic
 
     if mode == "deep":
-        result = _clarify_deep_via_codex(tool, topic)
-        if result is not None:
-            return result
-        # Deep 실패 시 Quick 폴백
-        print(f"  {DIM}Quick 모드로 폴백합니다.{RESET}")
-        return _clarify_quick(tool, topic, questioner)
+        if engine == "codex":
+            result = _clarify_deep_via_codex(tool, topic)
+            if result is not None:
+                return result
+            print(f"  {DIM}codex 위임 실패 → 네이티브 Deep 으로 폴백{RESET}")
+            engine = "native"
+        if engine == "native":
+            result = _clarify_deep_native(tool, topic, questioner, profile_key="standard")
+            if result is not None:
+                return result
+            print(f"  {DIM}네이티브 Deep 실패 → Quick 으로 폴백{RESET}")
 
     return _clarify_quick(tool, topic, questioner)
 
